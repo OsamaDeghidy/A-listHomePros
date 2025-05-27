@@ -1,0 +1,153 @@
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+
+/**
+ * خدمة الرسائل للتعامل مع طلبات API المتعلقة بالمحادثات والرسائل
+ * Message service for handling conversations and messages API requests
+ */
+class MessageService {
+  /**
+   * جلب جميع المحادثات للمستخدم
+   * Get all user conversations
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @returns {Promise} وعد يحتوي على قائمة المحادثات
+   */
+  getUserConversations(token) {
+    return axios.get(`${API_URL}/messages/conversations/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * جلب محادثة محددة
+   * Get a specific conversation
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @returns {Promise} وعد يحتوي على تفاصيل المحادثة
+   */
+  getConversation(token, conversationId) {
+    return axios.get(`${API_URL}/messages/conversations/${conversationId}/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * جلب رسائل محادثة
+   * Get conversation messages
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @param {Object} params - معلمات البحث (search parameters)
+   * @returns {Promise} وعد يحتوي على رسائل المحادثة
+   */
+  getMessages(token, conversationId, params = {}) {
+    return axios.get(`${API_URL}/messages/conversations/${conversationId}/messages/`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params
+    });
+  }
+
+  /**
+   * إنشاء محادثة جديدة
+   * Create a new conversation
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {Object} conversationData - بيانات المحادثة (conversation data)
+   * @returns {Promise} وعد يحتوي على المحادثة المنشأة
+   */
+  createConversation(token, conversationData) {
+    return axios.post(`${API_URL}/messages/conversations/`, conversationData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * إرسال رسالة
+   * Send a message
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @param {Object} messageData - بيانات الرسالة (message data)
+   * @returns {Promise} وعد يحتوي على الرسالة المرسلة
+   */
+  sendMessage(token, conversationId, messageData) {
+    return axios.post(`${API_URL}/messages/conversations/${conversationId}/messages/`, messageData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * وضع علامة على رسالة كمقروءة
+   * Mark a message as read
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} messageId - معرف الرسالة (message ID)
+   * @returns {Promise} وعد يحتوي على نتيجة العملية
+   */
+  markMessageAsRead(token, messageId) {
+    return axios.put(`${API_URL}/messages/messages/${messageId}/read/`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * وضع علامة على محادثة كمقروءة
+   * Mark a conversation as read
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @returns {Promise} وعد يحتوي على نتيجة العملية
+   */
+  markConversationAsRead(token, conversationId) {
+    return axios.put(`${API_URL}/messages/conversations/${conversationId}/read/`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * حذف رسالة
+   * Delete a message
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} messageId - معرف الرسالة (message ID)
+   * @returns {Promise} وعد يحتوي على نتيجة العملية
+   */
+  deleteMessage(token, messageId) {
+    return axios.delete(`${API_URL}/messages/messages/${messageId}/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * جلب عدد الرسائل غير المقروءة
+   * Get unread messages count
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @returns {Promise} وعد يحتوي على عدد الرسائل غير المقروءة
+   */
+  getUnreadMessagesCount(token) {
+    return axios.get(`${API_URL}/messages/unread-count/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * إرسال رسالة مع مرفق
+   * Send a message with attachment
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @param {Object} messageData - بيانات الرسالة (message data)
+   * @param {File} file - الملف المرفق (attachment file)
+   * @returns {Promise} وعد يحتوي على الرسالة المرسلة
+   */
+  sendMessageWithAttachment(token, conversationId, messageData, file) {
+    const formData = new FormData();
+    formData.append('content', messageData.content);
+    if (file) {
+      formData.append('attachment', file);
+    }
+    
+    return axios.post(`${API_URL}/messages/conversations/${conversationId}/messages/`, formData, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+  }
+}
+
+export default new MessageService(); 
