@@ -1,64 +1,73 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../hooks/useLanguage';
 import { messagingService } from '../services/api';
-import { FaInbox, FaUserCircle, FaPaperPlane, FaEllipsisV, FaSearch, FaPaperclip, FaRegSmile } from 'react-icons/fa';
+import { 
+  FaInbox, 
+  FaUserCircle, 
+  FaPaperPlane, 
+  FaEllipsisV, 
+  FaSearch, 
+  FaPaperclip, 
+  FaRegSmile,
+  FaArrowLeft,
+  FaComments,
+  FaPhone,
+  FaVideo
+} from 'react-icons/fa';
 
 const MessagesPage = () => {
-  const { user } = useAuth();
+  const { conversationId } = useParams();
+  const navigate = useNavigate();
+  const { currentUser, isAuthenticated } = useAuth();
+  const { language } = useLanguage();
+  const isArabic = language === 'ar';
+
+  // State management
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Refs
   const messageEndRef = useRef(null);
   const chatWindowRef = useRef(null);
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login?redirect=/dashboard/messages');
+      return;
+    }
+  }, [isAuthenticated, navigate]);
+
   // Fetch conversations on component mount
   useEffect(() => {
-    const fetchConversations = async () => {
-      try {
-        // In a production environment, this would call the API
-        // const response = await messagingService.getConversations();
-        // setConversations(response.data);
-        
-        // For demonstration, using mock data
-        const mockConversations = getMockConversations();
-        setConversations(mockConversations);
-        
-        if (mockConversations.length > 0) {
-          setActiveConversation(mockConversations[0]);
-          // Fetch messages for the first conversation
-          fetchMessages(mockConversations[0].id);
-        }
-        
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching conversations:', err);
-        setError('Failed to load conversations. Please try again.');
-        setLoading(false);
-      }
-    };
-
-    fetchConversations();
-  }, []);
-
-  // Fetch messages for a conversation
-  const fetchMessages = async (conversationId) => {
-    try {
-      // In a production environment, this would call the API
-      // const response = await messagingService.getMessages(conversationId);
-      // setMessages(response.data);
-      
-      // For demonstration, using mock data
-      setMessages(getMockMessages(conversationId));
-    } catch (err) {
-      console.error('Error fetching messages:', err);
-      setError('Failed to load messages. Please try again.');
+    if (isAuthenticated) {
+      fetchConversations();
     }
-  };
+  }, [isAuthenticated]);
+
+  // Handle conversation selection from URL parameter
+  useEffect(() => {
+    if (conversationId && conversations.length > 0) {
+      const conversation = conversations.find(c => c.id === parseInt(conversationId));
+      if (conversation) {
+        handleConversationSelect(conversation);
+      }
+    } else if (conversations.length > 0 && !activeConversation) {
+      // Auto-select first conversation if none selected
+      handleConversationSelect(conversations[0]);
+    }
+  }, [conversationId, conversations]);
 
   // Auto-scroll to the latest message
   useEffect(() => {
@@ -67,60 +76,122 @@ const MessagesPage = () => {
     }
   }, [messages]);
 
-  // Handle conversation selection
-  const handleConversationSelect = (conversation) => {
-    setActiveConversation(conversation);
-    fetchMessages(conversation.id);
-  };
-
-  // Handle sending a new message
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !activeConversation) return;
-
-    const messageData = {
-      content: newMessage,
-      conversation_id: activeConversation.id,
-      timestamp: new Date().toISOString()
-    };
-
+  const fetchConversations = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      // In a production environment, this would call the API
-      // await messagingService.sendMessage(activeConversation.id, { content: newMessage });
+      const response = await messagingService.getConversations();
+      const conversationsData = response.data.results || [];
+      setConversations(conversationsData);
       
-      // For demonstration, adding message locally
-      const newMessageObj = {
-        id: Math.floor(Math.random() * 1000),
-        sender: {
-          id: user?.id || 1,
-          name: user?.name || 'You',
-          avatar: user?.avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
-          isCurrentUser: true
-        },
-        content: newMessage,
-        timestamp: new Date().toISOString(),
-        read: true
-      };
+      if (conversationsData.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      // If we have a specific conversation ID from URL, load it
+      if (conversationId) {
+        const targetConversation = conversationsData.find(c => c.id === parseInt(conversationId));
+        if (targetConversation) {
+          setActiveConversation(targetConversation);
+          await fetchMessages(targetConversation.id);
+        }
+      } else if (conversationsData.length > 0) {
+        // Otherwise load the first conversation
+        setActiveConversation(conversationsData[0]);
+        await fetchMessages(conversationsData[0].id);
+      }
       
-      setMessages([...messages, newMessageObj]);
-      setNewMessage('');
-      
-      // Update the conversation with the latest message
-      const updatedConversations = conversations.map(conv => 
-        conv.id === activeConversation.id 
-          ? { ...conv, lastMessage: newMessage, timestamp: new Date().toISOString() }
-          : conv
-      );
-      
-      setConversations(updatedConversations);
     } catch (err) {
-      console.error('Error sending message:', err);
-      setError('Failed to send message. Please try again.');
+      console.error('Error fetching conversations:', err);
+      setError(isArabic ? 'فشل في تحميل المحادثات' : 'Failed to load conversations');
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Format timestamp to readable format
+  const fetchMessages = async (conversationId) => {
+    setMessagesLoading(true);
+    
+    try {
+      const response = await messagingService.getMessages(conversationId);
+      const messagesData = response.data.results || [];
+      setMessages(messagesData);
+      
+      // Mark conversation as read
+      try {
+        await messagingService.markConversationAsRead(conversationId);
+        // Update local conversation state
+        setConversations(prev => 
+          prev.map(conv => 
+            conv.id === conversationId 
+              ? { ...conv, unread_count: 0 }
+              : conv
+          )
+        );
+      } catch (markReadErr) {
+        console.error('Error marking conversation as read:', markReadErr);
+      }
+      
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+      setError(isArabic ? 'فشل في تحميل الرسائل' : 'Failed to load messages');
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  const handleConversationSelect = async (conversation) => {
+    setActiveConversation(conversation);
+    navigate(`/dashboard/messages/${conversation.id}`, { replace: true });
+    await fetchMessages(conversation.id);
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeConversation || sending) return;
+
+    setSending(true);
+    const messageContent = newMessage.trim();
+    setNewMessage(''); // Clear input immediately for better UX
+
+    try {
+      const response = await messagingService.sendMessage(activeConversation.id, {
+        content: messageContent
+      });
+
+      // Add the new message to the local state
+      const newMessageObj = response.data;
+      setMessages(prev => [...prev, newMessageObj]);
+
+      // Update the conversation's last message
+      setConversations(prev => 
+        prev.map(conv => 
+          conv.id === activeConversation.id 
+            ? { 
+                ...conv, 
+                last_message: { 
+                  content: messageContent,
+                  created_at: newMessageObj.created_at 
+                }
+              }
+            : conv
+        )
+      );
+
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setError(isArabic ? 'فشل في إرسال الرسالة' : 'Failed to send message');
+      setNewMessage(messageContent); // Restore message content on error
+    } finally {
+      setSending(false);
+    }
+  };
+
   const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    
     const date = new Date(timestamp);
     const today = new Date();
     const yesterday = new Date(today);
@@ -133,439 +204,291 @@ const MessagesPage = () => {
     
     // If message is from yesterday, show "Yesterday"
     if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
+      return isArabic ? 'أمس' : 'Yesterday';
     }
     
     // Otherwise show date
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(isArabic ? 'ar-EG' : 'en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const getParticipantName = (conversation) => {
+    if (!conversation.participants) return isArabic ? 'محادثة' : 'Conversation';
+    
+    // Find the other participant (not current user)
+    const otherParticipant = conversation.participants.find(
+      p => p.id !== currentUser?.id
+    );
+    
+    return otherParticipant?.first_name + ' ' + otherParticipant?.last_name || 
+           otherParticipant?.email || 
+           (isArabic ? 'مستخدم' : 'User');
   };
 
   // Filter conversations based on search term
   const filteredConversations = conversations.filter(conversation => {
-    return conversation.participant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           (conversation.lastMessage && conversation.lastMessage.toLowerCase().includes(searchTerm.toLowerCase()));
+    const participantName = getParticipantName(conversation);
+    const lastMessageContent = conversation.last_message?.content || '';
+    const searchLower = searchTerm.toLowerCase();
+    
+    return participantName.toLowerCase().includes(searchLower) ||
+           lastMessageContent.toLowerCase().includes(searchLower);
   });
 
-  // Mock data for conversations
-  const getMockConversations = () => [
-    {
-      id: 1,
-      participant: {
-        id: 101,
-        name: 'John Smith',
-        profession: 'Plumber',
-        avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-      },
-      lastMessage: "I will be there at 3 PM tomorrow as scheduled.",
-      timestamp: '2023-08-14T14:30:00',
-      unread: 0
-    },
-    {
-      id: 2,
-      participant: {
-        id: 102,
-        name: 'Sarah Johnson',
-        profession: 'Electrician',
-        avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-      },
-      lastMessage: "Do you have another issue with the wiring?",
-      timestamp: '2023-08-13T09:15:00',
-      unread: 2
-    },
-    {
-      id: 3,
-      participant: {
-        id: 103,
-        name: 'Mike Anderson',
-        profession: 'Carpenter',
-        avatar: 'https://randomuser.me/api/portraits/men/46.jpg',
-      },
-      lastMessage: "The shelves are complete. Please let me know when you can inspect them.",
-      timestamp: '2023-08-12T16:45:00',
-      unread: 0
-    },
-    {
-      id: 4,
-      participant: {
-        id: 104,
-        name: 'Emily Rodriguez',
-        profession: 'Painter',
-        avatar: 'https://randomuser.me/api/portraits/women/65.jpg',
-      },
-      lastMessage: "I have sent you the color options for your review.",
-      timestamp: '2023-08-10T11:20:00',
-      unread: 1
-    },
-    {
-      id: 5,
-      participant: {
-        id: 105,
-        name: 'David Chen',
-        profession: 'HVAC Technician',
-        avatar: 'https://randomuser.me/api/portraits/men/22.jpg',
-      },
-      lastMessage: "Your AC unit is working fine now, but it needs a filter replacement soon.",
-      timestamp: '2023-08-08T13:50:00',
-      unread: 0
-    }
-  ];
-
-  // Mock data for messages in a conversation
-  const getMockMessages = (conversationId) => {
-    const conversation = conversations.find(c => c.id === conversationId);
-    if (!conversation) return [];
-    
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    switch(conversationId) {
-      case 1: // John Smith (Plumber)
-        return [
-          {
-            id: 101,
-            sender: {
-              id: user?.id || 1,
-              name: user?.name || 'You',
-              avatar: user?.avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
-              isCurrentUser: true
-            },
-            content: 'Hi John, I have a leaking faucet in the kitchen. Can you help?',
-            timestamp: yesterday.toISOString(),
-            read: true
-          },
-          {
-            id: 102,
-            sender: {
-              id: 101,
-              name: 'John Smith',
-              avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-              isCurrentUser: false
-            },
-            content: 'Hello! I would be happy to help with your leaking faucet. Can you provide more details about the issue?',
-            timestamp: yesterday.toISOString(),
-            read: true
-          },
-          {
-            id: 103,
-            sender: {
-              id: user?.id || 1,
-              name: user?.name || 'You',
-              avatar: user?.avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
-              isCurrentUser: true
-            },
-            content: 'It is dripping constantly, and I have tried tightening the handle, but it has not helped.',
-            timestamp: yesterday.toISOString(),
-            read: true
-          },
-          {
-            id: 104,
-            sender: {
-              id: 101,
-              name: 'John Smith',
-              avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-              isCurrentUser: false
-            },
-            content: 'Sounds like a worn-out washer or cartridge. I can come take a look tomorrow at 3 PM if that works for you?',
-            timestamp: yesterday.toISOString(),
-            read: true
-          },
-          {
-            id: 105,
-            sender: {
-              id: user?.id || 1,
-              name: user?.name || 'You',
-              avatar: user?.avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
-              isCurrentUser: true
-            },
-            content: '3 PM tomorrow works perfectly. How much will it cost?',
-            timestamp: yesterday.toISOString(),
-            read: true
-          },
-          {
-            id: 106,
-            sender: {
-              id: 101,
-              name: 'John Smith',
-              avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-              isCurrentUser: false
-            },
-            content: 'The service call is $75, and depending on the parts needed, it could be another $20-50. I will give you a firm quote once I see the issue.',
-            timestamp: today.toISOString(),
-            read: true
-          },
-          {
-            id: 107,
-            sender: {
-              id: user?.id || 1,
-              name: user?.name || 'You',
-              avatar: user?.avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
-              isCurrentUser: true
-            },
-            content: 'That sounds reasonable. Do I need to prepare anything before you arrive?',
-            timestamp: today.toISOString(),
-            read: true
-          },
-          {
-            id: 108,
-            sender: {
-              id: 101,
-              name: 'John Smith',
-              avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-              isCurrentUser: false
-            },
-            content: 'I will be there at 3 PM tomorrow as scheduled.',
-            timestamp: today.toISOString(),
-            read: true
-          }
-        ];
-      case 2: // Sarah Johnson (Electrician)
-        return [
-          {
-            id: 201,
-            sender: {
-              id: 102,
-              name: 'Sarah Johnson',
-              avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-              isCurrentUser: false
-            },
-            content: 'I completed the wiring in your home office yesterday. How is everything working?',
-            timestamp: '2023-08-12T10:30:00',
-            read: true
-          },
-          {
-            id: 202,
-            sender: {
-              id: user?.id || 1,
-              name: user?.name || 'You',
-              avatar: user?.avatar || 'https://randomuser.me/api/portraits/men/1.jpg',
-              isCurrentUser: true
-            },
-            content: 'Everything works great! The outlets and lighting are perfect.',
-            timestamp: '2023-08-12T11:45:00',
-            read: true
-          },
-          {
-            id: 203,
-            sender: {
-              id: 102,
-              name: 'Sarah Johnson',
-              avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-              isCurrentUser: false
-            },
-            content: 'Great to hear! If you have any issues or need any other electrical work, just let me know.',
-            timestamp: '2023-08-12T12:15:00',
-            read: true
-          },
-          {
-            id: 204,
-            sender: {
-              id: 102,
-              name: 'Sarah Johnson',
-              avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-              isCurrentUser: false
-            },
-            content: 'Do you have another issue with the wiring?',
-            timestamp: '2023-08-13T09:15:00',
-            read: false
-          }
-        ];
-      default:
-        return [];
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+        <span className="ml-3 text-lg">{isArabic ? 'جاري التحميل...' : 'Loading...'}</span>
+      </div>
+    );
+  }
 
   return (
     <>
       <Helmet>
-        <title>Messages | A-List Home Pros</title>
+        <title>{isArabic ? 'الرسائل | A-List Home Pros' : 'Messages | A-List Home Pros'}</title>
       </Helmet>
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold mb-8">Messages</h1>
-        
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="grid grid-cols-1 md:grid-cols-3">
-            {/* Conversations List */}
-            <div className="border-r border-gray-200">
-              <div className="p-4 border-b border-gray-200">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Search conversations..."
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                  <FaSearch className="absolute left-3 top-3 text-gray-400" />
-                </div>
-              </div>
-              
-              <div className="overflow-y-auto" style={{ maxHeight: '600px' }}>
-                {loading ? (
-                  <div className="flex justify-center items-center h-32">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-                  </div>
-                ) : filteredConversations.length === 0 ? (
-                  <div className="p-4 text-center text-gray-500">
-                    <FaInbox className="mx-auto text-gray-300 text-4xl mb-2" />
-                    <p>No conversations found</p>
-                  </div>
-                ) : (
-                  filteredConversations.map((conversation) => (
-                    <div 
-                      key={conversation.id}
-                      className={`p-4 border-b border-gray-200 hover:bg-gray-50 cursor-pointer ${activeConversation?.id === conversation.id ? 'bg-blue-50' : ''}`}
-                      onClick={() => handleConversationSelect(conversation)}
-                    >
-                      <div className="flex items-start">
-                        <div className="relative">
-                          <img 
-                            src={conversation.participant.avatar} 
-                            alt={conversation.participant.name}
-                            className="w-12 h-12 rounded-full mr-4 object-cover"
-                          />
-                          {conversation.unread > 0 && (
-                            <span className="absolute top-0 right-3 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                              {conversation.unread}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between">
-                            <h3 className="font-semibold truncate">{conversation.participant.name}</h3>
-                            <span className="text-xs text-gray-500">{formatTimestamp(conversation.timestamp)}</span>
-                          </div>
-                          <p className="text-sm text-gray-600 truncate">{conversation.lastMessage}</p>
-                          <span className="text-xs text-gray-400">{conversation.participant.profession}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+
+      <div className="h-screen flex bg-gray-100">
+        {/* Conversations Sidebar */}
+        <div className="w-1/3 bg-white border-r border-gray-200 flex flex-col">
+          {/* Header */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <h1 className="text-xl font-semibold text-gray-900">
+                {isArabic ? 'الرسائل' : 'Messages'}
+              </h1>
+              <Link
+                to="/dashboard"
+                className="text-blue-600 hover:text-blue-800"
+              >
+                <FaArrowLeft className="h-5 w-5" />
+              </Link>
             </div>
             
-            {/* Chat Window */}
-            <div className="md:col-span-2 flex flex-col h-[700px]">
-              {activeConversation ? (
-                <>
-                  {/* Chat Header */}
-                  <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-                    <div className="flex items-center">
-                      <img 
-                        src={activeConversation.participant.avatar} 
-                        alt={activeConversation.participant.name}
-                        className="w-10 h-10 rounded-full mr-3 object-cover"
-                      />
-                      <div>
-                        <h3 className="font-semibold">{activeConversation.participant.name}</h3>
-                        <p className="text-xs text-gray-500">{activeConversation.participant.profession}</p>
-                      </div>
-                    </div>
-                    <button className="text-gray-500 hover:text-gray-700">
-                      <FaEllipsisV />
-                    </button>
-                  </div>
-                  
-                  {/* Messages */}
-                  <div className="flex-1 p-4 overflow-y-auto bg-gray-50" ref={chatWindowRef}>
-                    {messages.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                        <FaUserCircle className="text-5xl mb-3 text-gray-300" />
-                        <p>No messages yet</p>
-                        <p className="text-sm">Send a message to start the conversation</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {messages.map((message) => (
-                          <div
-                            key={message.id}
-                            className={`flex ${message.sender.isCurrentUser ? 'justify-end' : 'justify-start'}`}
-                          >
-                            {!message.sender.isCurrentUser && (
-                              <img 
-                                src={message.sender.avatar} 
-                                alt={message.sender.name}
-                                className="w-8 h-8 rounded-full mr-2 self-end object-cover"
-                              />
-                            )}
-                            <div>
-                              <div 
-                                className={`rounded-lg px-4 py-2 max-w-xs lg:max-w-md ${
-                                  message.sender.isCurrentUser 
-                                    ? 'bg-blue-600 text-white rounded-br-none' 
-                                    : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
-                                }`}
-                              >
-                                <p>{message.content}</p>
-                              </div>
-                              <div className={`text-xs mt-1 ${message.sender.isCurrentUser ? 'text-right' : ''} text-gray-500`}>
-                                {formatTimestamp(message.timestamp)}
-                                {message.sender.isCurrentUser && (
-                                  <span className="ml-2">
-                                    {message.read ? 'Read' : 'Sent'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {message.sender.isCurrentUser && (
-                              <img 
-                                src={message.sender.avatar} 
-                                alt={message.sender.name}
-                                className="w-8 h-8 rounded-full ml-2 self-end object-cover"
-                              />
-                            )}
-                          </div>
-                        ))}
-                        <div ref={messageEndRef} />
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Message Input */}
-                  <form onSubmit={handleSendMessage} className="p-3 border-t border-gray-200 bg-white">
-                    <div className="flex items-center">
-                      <button 
-                        type="button"
-                        className="p-2 text-gray-500 hover:text-gray-700"
-                        title="Attach file"
-                      >
-                        <FaPaperclip />
-                      </button>
-                      <input
-                        type="text"
-                        placeholder="Type a message..."
-                        className="flex-1 border border-gray-300 rounded-full px-4 py-2 mx-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                      />
-                      <button 
-                        type="button"
-                        className="p-2 text-gray-500 hover:text-gray-700 mr-2"
-                        title="Add emoji"
-                      >
-                        <FaRegSmile />
-                      </button>
-                      <button
-                        type="submit"
-                        className={`p-2 rounded-full ${newMessage.trim() ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
-                        disabled={!newMessage.trim()}
-                      >
-                        <FaPaperPlane />
-                      </button>
-                    </div>
-                  </form>
-                </>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-gray-500">
-                  <FaInbox className="text-5xl mb-3 text-gray-300" />
-                  <p>Select a conversation</p>
-                  <p className="text-sm">Choose a conversation from the list to start messaging</p>
-                </div>
-              )}
+            {/* Search */}
+            <div className="relative">
+              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder={isArabic ? 'البحث في المحادثات...' : 'Search conversations...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
           </div>
+
+          {/* Conversations List */}
+          <div className="flex-1 overflow-y-auto">
+            {filteredConversations.length === 0 ? (
+              <div className="p-4 text-center">
+                <FaComments className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                <p className="text-gray-500">
+                  {isArabic ? 'لا توجد محادثات' : 'No conversations'}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {filteredConversations.map(conversation => (
+                  <motion.div
+                    key={conversation.id}
+                    whileHover={{ backgroundColor: '#f3f4f6' }}
+                    onClick={() => handleConversationSelect(conversation)}
+                    className={`p-4 cursor-pointer transition-colors ${
+                      activeConversation?.id === conversation.id 
+                        ? 'bg-blue-50 border-r-2 border-blue-500' 
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0 relative">
+                        <FaUserCircle className="h-12 w-12 text-gray-400" />
+                        {conversation.unread_count > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                            {conversation.unread_count}
+                          </span>
+                        )}
+                      </div>
+                      <div className="ml-3 flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                          <h3 className="text-sm font-medium text-gray-900 truncate">
+                            {getParticipantName(conversation)}
+                          </h3>
+                          <span className="text-xs text-gray-500">
+                            {formatTimestamp(conversation.last_message?.created_at)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 truncate mt-1">
+                          {conversation.last_message?.content || (isArabic ? 'لا توجد رسائل' : 'No messages')}
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {activeConversation ? (
+            <>
+              {/* Chat Header */}
+              <div className="p-4 bg-white border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <FaUserCircle className="h-10 w-10 text-gray-400 mr-3" />
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900">
+                        {getParticipantName(activeConversation)}
+                      </h2>
+                      <p className="text-sm text-gray-500">
+                        {activeConversation.title || (isArabic ? 'محادثة' : 'Conversation')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
+                      <FaPhone className="h-5 w-5" />
+                    </button>
+                    <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
+                      <FaVideo className="h-5 w-5" />
+                    </button>
+                    <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100">
+                      <FaEllipsisV className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages Area */}
+              <div 
+                ref={chatWindowRef}
+                className="flex-1 overflow-y-auto p-4 space-y-4"
+              >
+                {messagesLoading ? (
+                  <div className="flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FaComments className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <p className="text-gray-500">
+                      {isArabic ? 'ابدأ المحادثة بإرسال رسالة' : 'Start the conversation by sending a message'}
+                    </p>
+                  </div>
+                ) : (
+                  <AnimatePresence>
+                    {messages.map((message, index) => {
+                      const isCurrentUserMessage = message.sender?.id === currentUser?.id;
+                      
+                      return (
+                        <motion.div
+                          key={message.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`flex ${isCurrentUserMessage ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                            isCurrentUserMessage
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-200 text-gray-900'
+                          }`}>
+                            <p className="text-sm">{message.content}</p>
+                            <p className={`text-xs mt-1 ${
+                              isCurrentUserMessage ? 'text-blue-100' : 'text-gray-500'
+                            }`}>
+                              {formatTimestamp(message.created_at)}
+                            </p>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                )}
+                <div ref={messageEndRef} />
+              </div>
+
+              {/* Message Input */}
+              <div className="p-4 bg-white border-t border-gray-200">
+                <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                  >
+                    <FaPaperclip className="h-5 w-5" />
+                  </button>
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder={isArabic ? 'اكتب رسالة...' : 'Type a message...'}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      disabled={sending}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <FaRegSmile className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!newMessage.trim() || sending}
+                    className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {sending ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                    ) : (
+                      <FaPaperPlane className="h-5 w-5" />
+                    )}
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="text-center">
+                <FaComments className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {isArabic ? 'اختر محادثة للبدء' : 'Select a conversation to start'}
+                </h3>
+                <p className="text-gray-500">
+                  {isArabic 
+                    ? 'اختر محادثة من القائمة للبدء في المراسلة'
+                    : 'Choose a conversation from the list to start messaging'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Error Toast */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg"
+          >
+            <div className="flex items-center">
+              <span className="mr-2">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-white hover:text-gray-200"
+              >
+                ×
+              </button>
+            </div>
+          </motion.div>
+        )}
       </div>
     </>
   );

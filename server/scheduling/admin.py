@@ -10,9 +10,9 @@ class AppointmentNoteInline(admin.TabularInline):
 
 @admin.register(AvailabilitySlot)
 class AvailabilitySlotAdmin(admin.ModelAdmin):
-    list_display = ['id', 'contractor', 'get_day_name', 'start_time', 'end_time', 'is_recurring']
-    list_filter = ['day_of_week', 'is_recurring', 'contractor']
-    search_fields = ['contractor__business_name']
+    list_display = ['id', 'alistpro', 'get_day_name', 'start_time', 'end_time', 'is_recurring']
+    list_filter = ['day_of_week', 'is_recurring', 'alistpro']
+    search_fields = ['alistpro__business_name']
     readonly_fields = ['created_at', 'updated_at']
     
     def get_day_name(self, obj):
@@ -23,17 +23,17 @@ class AvailabilitySlotAdmin(admin.ModelAdmin):
 
 @admin.register(UnavailableDate)
 class UnavailableDateAdmin(admin.ModelAdmin):
-    list_display = ['id', 'contractor', 'date', 'reason']
-    list_filter = ['date', 'contractor']
-    search_fields = ['contractor__business_name', 'reason']
+    list_display = ['id', 'alistpro', 'date', 'reason']
+    list_filter = ['date', 'alistpro']
+    search_fields = ['alistpro__business_name', 'reason']
     readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
-    list_display = ['id', 'client', 'contractor', 'appointment_date', 'start_time', 'end_time', 'status']
-    list_filter = ['status', 'appointment_date', 'contractor']
-    search_fields = ['client__name', 'contractor__business_name', 'location', 'notes']
+    list_display = ['id', 'client', 'alistpro', 'appointment_date', 'start_time', 'end_time', 'status']
+    list_filter = ['status', 'appointment_date', 'alistpro']
+    search_fields = ['client__name', 'alistpro__business_name', 'location', 'notes']
     readonly_fields = ['created_at', 'updated_at']
     inlines = [AppointmentNoteInline]
     list_editable = ['status']

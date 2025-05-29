@@ -1,13 +1,13 @@
 from django.db import models
 from django.conf import settings
 from core.models import TimeStampedModel
-from contractors.models import ContractorProfile, ServiceCategory
+from alistpros_profiles.models import AListHomeProProfile, ServiceCategory
 
 
 class AvailabilitySlot(TimeStampedModel):
-    """Time slots when a contractor is available for appointments"""
-    contractor = models.ForeignKey(
-        ContractorProfile,
+    """Time slots when an A-List Home Pro is available for appointments"""
+    alistpro = models.ForeignKey(
+        AListHomeProProfile,
         on_delete=models.CASCADE,
         related_name='availability_slots'
     )
@@ -31,13 +31,13 @@ class AvailabilitySlot(TimeStampedModel):
         
     def __str__(self):
         day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        return f"{self.contractor.business_name} - {day_names[self.day_of_week]} {self.start_time} to {self.end_time}"
+        return f"{self.alistpro.business_name} - {day_names[self.day_of_week]} {self.start_time} to {self.end_time}"
 
 
 class UnavailableDate(TimeStampedModel):
-    """Specific dates when a contractor is unavailable"""
-    contractor = models.ForeignKey(
-        ContractorProfile,
+    """Specific dates when an A-List Home Pro is unavailable"""
+    alistpro = models.ForeignKey(
+        AListHomeProProfile,
         on_delete=models.CASCADE,
         related_name='unavailable_dates'
     )
@@ -48,7 +48,7 @@ class UnavailableDate(TimeStampedModel):
         ordering = ['date']
         
     def __str__(self):
-        return f"{self.contractor.business_name} - Unavailable on {self.date}"
+        return f"{self.alistpro.business_name} - Unavailable on {self.date}"
 
 
 class AppointmentStatus(models.TextChoices):
@@ -60,16 +60,16 @@ class AppointmentStatus(models.TextChoices):
 
 
 class Appointment(TimeStampedModel):
-    """Appointment between a client and contractor"""
+    """Appointment between a client and A-List Home Pro"""
     client = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='appointments'
     )
-    contractor = models.ForeignKey(
-        ContractorProfile,
+    alistpro = models.ForeignKey(
+        AListHomeProProfile,
         on_delete=models.CASCADE,
-        related_name='contractor_appointments'
+        related_name='alistpro_appointments'
     )
     service_category = models.ForeignKey(
         ServiceCategory,
@@ -93,7 +93,7 @@ class Appointment(TimeStampedModel):
         ordering = ['appointment_date', 'start_time']
         
     def __str__(self):
-        return f"Appointment with {self.contractor.business_name} on {self.appointment_date} at {self.start_time}"
+        return f"Appointment with {self.alistpro.business_name} on {self.appointment_date} at {self.start_time}"
 
 
 class AppointmentNote(TimeStampedModel):

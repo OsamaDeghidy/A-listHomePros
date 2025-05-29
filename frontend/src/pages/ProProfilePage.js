@@ -1,144 +1,221 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FaStar, FaMapMarkerAlt, FaClock, FaPhone, FaEnvelope, FaCalendarAlt, FaShieldAlt, FaCheck, FaImage, FaHeart, FaRegHeart } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../context/NotificationContext';
+import { useLanguage } from '../hooks/useLanguage';
 import useProfessionalDetails from '../hooks/useProfessionalDetails';
-import Layout from '../components/layout/Layout';
+import { proService } from '../services/api';
 
 const ProProfilePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
   const { addToast } = useNotifications();
+  const { language, isRTL } = useLanguage();
   const { professional, reviews, availability, loading, error, startConversation, messageLoading } = useProfessionalDetails(id);
+  
+  // State management
   const [activeTab, setActiveTab] = useState('overview');
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [message, setMessage] = useState('');
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [showAllServices, setShowAllServices] = useState(false);
+  const [showAllReviews, setShowAllReviews] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
+  // Loading state
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-16 flex justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (error || !professional) {
-    return (
-      <div className="container mx-auto px-4 py-16">
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded">
-          <p>{error || 'Professional not found'}</p>
-          <Link to="/search" className="font-medium text-red-800 hover:underline mt-2 inline-block">
-            Return to search
-          </Link>
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-4xl bg-white rounded-xl shadow-lg p-8 flex flex-col items-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600"></div>
+          <p className="mt-4 text-gray-600 font-medium">
+            {language === 'ar' ? 'جاري تحميل الملف الشخصي...' : 'Loading professional profile...'}
+          </p>
         </div>
       </div>
     );
   }
 
-  // Fallback for rendering while we integrate with real data
+  // Error state
+  if (error || !professional) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-4xl bg-white rounded-xl shadow-lg p-8">
+          <div className="flex flex-col items-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">
+              {language === 'ar' ? 'حدث خطأ' : 'Error'}
+            </h2>
+            <p className="text-gray-600 text-center mb-6">
+              {error || (language === 'ar' ? 'لم يتم العثور على المحترف' : 'Professional not found')}
+            </p>
+            <Link 
+              to="/search" 
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 flex items-center"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              {language === 'ar' ? 'العودة إلى البحث' : 'Return to search'}
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Process professional data from the API
+  const getServiceCategoryName = () => {
+    if (professional.service_categories && professional.service_categories.length > 0) {
+      return professional.service_categories[0].name;
+    }
+    return professional.profession || (language === 'ar' ? 'محترف خدمات' : 'Service Professional');
+  };
+
+  // Extract and normalize data from the API response
   const pro = {
     id: professional.id || id,
-    name: professional.name || professional.business_name || 'John Smith',
-    profession: professional.profession || 'Plumber',
-    avatar: professional.avatar || professional.profile_image || 'https://randomuser.me/api/portraits/men/32.jpg',
-    coverPhoto: professional.cover_photo || 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
-    rating: professional.rating || professional.average_rating || 4.9,
+    name: professional.business_name || professional.name || (language === 'ar' ? 'محترف خدمات' : 'Service Professional'),
+    profession: getServiceCategoryName(),
+    avatar: professional.profile_image || professional.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(professional.business_name || 'Pro')}&background=0D8ABC&color=fff`,
+    coverPhoto: professional.cover_photo || 'https://images.unsplash.com/photo-1613545325278-f24b0cae1224?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80',
+    rating: professional.average_rating || professional.rating || 0,
     reviews: reviews || [],
-    reviewsCount: professional.reviews_count || professional.review_count || 87,
-    completedJobs: professional.completed_jobs || 134,
-    location: professional.location?.address || professional.location || 'New York, NY',
-    availability: professional.availability || 'Available today',
-    hourlyRate: professional.hourly_rate || professional.rate || 85,
-    bio: professional.bio || professional.business_description || 'Professional plumber with over 15 years of experience in residential and commercial plumbing. Specializing in leak detection, pipe installation, and fixture replacements.',
-    services: professional.services || [
+    reviewsCount: professional.review_count || reviews?.length || 0,
+    completedJobs: professional.completed_jobs || professional.jobs_completed || 0,
+    location: professional.location?.address || professional.address || (language === 'ar' ? 'غير محدد' : 'Not specified'),
+    availability: availability || [],
+    hourlyRate: professional.hourly_rate || professional.rate || 0,
+    bio: professional.business_description || professional.bio || (language === 'ar' ? 'لا يوجد وصف متاح' : 'No description available'),
+    services: professional.services || [],
+    certifications: professional.certifications || [],
+    portfolio: professional.portfolio_items || [],
+    gallery: professional.gallery || [],
+    phone: professional.phone || professional.contact_phone || (language === 'ar' ? 'غير متاح' : 'Not available'),
+    email: professional.email || professional.contact_email || (language === 'ar' ? 'غير متاح' : 'Not available'),
+    user_id: professional.user_id || professional.user?.id,
+    years_of_experience: professional.years_of_experience || 0,
+    license_number: professional.license_number || (language === 'ar' ? 'غير متاح' : 'Not available'),
+    insurance_info: professional.insurance_info || (language === 'ar' ? 'غير متاح' : 'Not available'),
+    service_radius: professional.service_radius || 0,
+  };
+  
+  // Generate default services if none are provided from the API
+  if (!pro.services || pro.services.length === 0) {
+    pro.services = [
       {
         id: 1,
-        name: 'Leak Detection & Repair',
-        description: 'Finding and fixing leaks in pipes, faucets, and fixtures',
-        price: 120,
-        duration: '1-2 hours'
-      },
-      {
-        id: 2,
-        name: 'Pipe Installation',
-        description: 'Installing new pipes or replacing old ones',
-        price: 200,
-        duration: '2-4 hours'
-      },
-      {
-        id: 3,
-        name: 'Fixture Installation',
-        description: 'Installing sinks, toilets, showers, and other fixtures',
-        price: 150,
-        duration: '1-3 hours'
-      },
-      {
-        id: 4,
-        name: 'Drain Cleaning',
-        description: 'Removing clogs and cleaning drains',
+        name: language === 'ar' ? 'خدمة أساسية' : 'Basic Service',
+        description: language === 'ar' ? 'خدمة أساسية توفرها الشركة' : 'Basic service provided by the professional',
         price: 100,
-        duration: '1 hour'
+        duration: language === 'ar' ? '1-2 ساعات' : '1-2 hours'
       }
-    ],
-    certifications: professional.certifications || [
-      'Licensed Master Plumber',
-      'Certified Backflow Tester',
-      'EPA Certified'
-    ],
-    gallery: professional.gallery || professional.portfolio_images || [
-      'https://images.unsplash.com/photo-1581141849291-1125c7b692b5?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'https://images.unsplash.com/photo-1581141849291-1125c7b692b5?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'https://images.unsplash.com/photo-1581141849291-1125c7b692b5?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'https://images.unsplash.com/photo-1581141849291-1125c7b692b5?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60'
-    ],
-    phone: professional.phone || professional.contact_phone || '+1234567890',
-    email: professional.email || professional.contact_email || 'contact@example.com'
-  };
+    ];
+  }
+  
+  // Generate default certifications if none are provided
+  if (!pro.certifications || pro.certifications.length === 0) {
+    pro.certifications = [
+      language === 'ar' ? 'مرخص ومعتمد' : 'Licensed and Certified',
+    ];
+  }
+  
+  // Generate default gallery images if none are provided
+  if ((!pro.gallery || pro.gallery.length === 0) && (!pro.portfolio || pro.portfolio.length === 0)) {
+    pro.gallery = [];
+  } else if (pro.portfolio && pro.portfolio.length > 0) {
+    // Extract images from portfolio items
+    pro.gallery = pro.portfolio.map(item => item.image || item.photo);
+  }
 
   // Function to render star ratings
   const renderStars = (rating) => {
     const stars = [];
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+    
     for (let i = 1; i <= 5; i++) {
-      stars.push(
-        <svg 
-          key={i} 
-          className={`w-5 h-5 ${i <= rating ? 'text-yellow-400' : 'text-gray-300'}`}
-          fill="currentColor" 
-          viewBox="0 0 20 20" 
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-        </svg>
-      );
+      if (i <= fullStars) {
+        stars.push(<FaStar key={i} className="text-yellow-400" />);
+      } else if (i === fullStars + 1 && hasHalfStar) {
+        stars.push(
+          <span key={i} className="text-yellow-400 relative">
+            <FaStar className="absolute text-gray-300" />
+            <div className="overflow-hidden w-1/2">
+              <FaStar />
+            </div>
+          </span>
+        );
+      } else {
+        stars.push(<FaStar key={i} className="text-gray-300" />);
+      }
     }
     return stars;
   };
 
-  // وظيفة لفتح نافذة التواصل مع المحترف
+  // Toggle favorite status
+  const toggleFavorite = async () => {
+    if (!isAuthenticated) {
+      addToast(language === 'ar' ? 'يرجى تسجيل الدخول لإضافة هذا المحترف إلى المفضلة' : 'Please log in to add this professional to favorites', 
+        { appearance: 'warning' });
+      navigate('/login', { state: { from: `/pros/${id}` } });
+      return;
+    }
+    
+    setIsFavorite(prev => !prev);
+    addToast(
+      isFavorite 
+        ? (language === 'ar' ? 'تمت إزالة المحترف من المفضلة' : 'Professional removed from favorites')
+        : (language === 'ar' ? 'تمت إضافة المحترف إلى المفضلة' : 'Professional added to favorites'),
+      { appearance: 'success' }
+    );
+    
+    // Here you would call the API to add/remove from favorites
+    // await proService.toggleFavorite(id);
+  };
+  
+  // Function to open message modal
   const openMessageModal = () => {
     if (!isAuthenticated) {
-      addToast('Please login to send messages', 'info');
+      addToast(language === 'ar' ? 'يرجى تسجيل الدخول لإرسال الرسائل' : 'Please log in to send messages', 
+        { appearance: 'warning' });
       navigate('/login', { state: { from: `/pros/${id}` } });
       return;
     }
     setIsMessageModalOpen(true);
   };
 
-  // وظيفة لإرسال رسالة للمحترف
+  // Handle message submission
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!message.trim()) return;
-
+    if (!message.trim()) {
+      addToast(language === 'ar' ? 'يرجى إدخال رسالة' : 'Please enter a message', 
+        { appearance: 'warning' });
+      return;
+    }
+    
     try {
       await startConversation(message);
-      setIsMessageModalOpen(false);
+      addToast(language === 'ar' ? 'تم إرسال الرسالة بنجاح' : 'Message sent successfully', 
+        { appearance: 'success' });
       setMessage('');
-      addToast('Message sent successfully!', 'success');
-      navigate('/messages');
-    } catch (error) {
-      addToast(error.message || 'Failed to send message', 'error');
+      setIsMessageModalOpen(false);
+      
+      // Optionally navigate to messages page
+      // navigate('/messages');
+    } catch (err) {
+      console.error('Error sending message:', err);
+      addToast(err.message || (language === 'ar' ? 'فشل في إرسال الرسالة' : 'Failed to send message'), 
+        { appearance: 'error' });
     }
   };
 
@@ -236,7 +313,7 @@ const ProProfilePage = () => {
                     <svg className="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-gray-700">{pro.availability}</span>
+                    <span className="text-gray-700">{Array.isArray(pro.availability) ? 'Available for booking' : 'Contact for availability'}</span>
                   </div>
                   <div className="flex items-center">
                     <svg className="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">

@@ -1,14 +1,14 @@
 from django.db import models
 from django.conf import settings
 from core.models import TimeStampedModel
-from contractors.models import ContractorProfile, ServiceCategory
+from alistpros_profiles.models import AListHomeProProfile, ServiceCategory
 
 
 class DashboardStat(TimeStampedModel):
     """Statistics for dashboard display"""
     date = models.DateField()
     new_users = models.IntegerField(default=0)
-    new_contractors = models.IntegerField(default=0)
+    new_alistpros = models.IntegerField(default=0)
     new_appointments = models.IntegerField(default=0)
     completed_appointments = models.IntegerField(default=0)
     total_payment_volume = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -21,10 +21,10 @@ class DashboardStat(TimeStampedModel):
         return f"Stats for {self.date}"
 
 
-class ContractorStat(TimeStampedModel):
-    """Statistics for individual contractors"""
-    contractor = models.ForeignKey(
-        ContractorProfile,
+class AListHomeProStat(TimeStampedModel):
+    """Statistics for individual A-List Home Pros"""
+    alistpro = models.ForeignKey(
+        AListHomeProProfile,
         on_delete=models.CASCADE,
         related_name='stats'
     )
@@ -38,10 +38,10 @@ class ContractorStat(TimeStampedModel):
     
     class Meta:
         ordering = ['-date']
-        unique_together = ['contractor', 'date']
+        unique_together = ['alistpro', 'date']
     
     def __str__(self):
-        return f"Stats for {self.contractor.business_name} on {self.date}"
+        return f"Stats for {self.alistpro.business_name} on {self.date}"
 
 
 class ServiceCategoryStat(TimeStampedModel):
@@ -52,7 +52,7 @@ class ServiceCategoryStat(TimeStampedModel):
         related_name='stats'
     )
     date = models.DateField()
-    contractor_count = models.IntegerField(default=0)
+    alistpro_count = models.IntegerField(default=0)
     appointment_count = models.IntegerField(default=0)
     average_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     

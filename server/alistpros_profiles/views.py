@@ -1,4 +1,4 @@
-from rest_framework import generics, viewsets, permissions, status, filters
+from rest_framework import generics, viewsets, permissions, status, filters, serializers
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes, action
 from django.shortcuts import get_object_or_404
@@ -152,3 +152,77 @@ class AdminPendingAListHomeProsView(generics.ListAPIView):
     
     def get_queryset(self):
         return AListHomeProProfile.objects.filter(is_onboarded=False)
+
+
+class AListHomeProReviewViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing A-List Home Pro reviews with filtering
+    """
+    queryset = AListHomeProReview.objects.all()
+    serializer_class = AListHomeProReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['alistpro', 'rating']
+    ordering_fields = ['created_at', 'rating']
+    ordering = ['-created_at']
+    
+    def get_queryset(self):
+        """Return reviews based on filters"""
+        # للحماية من أخطاء Swagger
+        if getattr(self, 'swagger_fake_view', False):
+            return AListHomeProReview.objects.none()
+            
+        return AListHomeProReview.objects.all()
+    
+    def perform_create(self, serializer):
+        """Create a new review"""
+        alistpro_id = self.request.data.get('alistpro')
+        if not alistpro_id:
+            raise serializers.ValidationError({"alistpro": "This field is required."})
+            
+        alistpro_profile = get_object_or_404(AListHomeProProfile, id=alistpro_id)
+        
+        # Check if the client has already reviewed this A-List Home Pro
+        existing_review = AListHomeProReview.objects.filter(
+            alistpro=alistpro_profile,
+            client=self.request.user
+        ).first()
+        
+        if existing_review:
+            raise serializers.ValidationError({"detail": "You have already reviewed this professional."})
+        
+        serializer.save(alistpro=alistpro_profile, client=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def for_professional(self, request):
+        """Get reviews for a specific professional"""
+        pro_id = request.query_params.get('alistpro')
+        
+        if not pro_id:
+            return Response(
+                {'detail': 'Professional ID (alistpro) is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Get the professional profile
+            pro_profile = AListHomeProProfile.objects.get(id=pro_id)
+            
+            # Get reviews for this professional
+            reviews = AListHomeProReview.objects.filter(alistpro=pro_profile).order_by('-created_at')
+            serializer = self.get_serializer(reviews, many=True)
+            
+            return Response({
+                'results': serializer.data,
+                'count': reviews.count()
+            })
+        except AListHomeProProfile.DoesNotExist:
+            return Response(
+                {'detail': 'Professional not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
-import { alistProsService, schedulingService } from '../services/api';
-import messageService from '../services/messageService';
+import { proService, messagingService } from '../services/api';
+
+// دالة مساعدة لتحويل رقم اليوم إلى اسم اليوم
+const getDayName = (dayNumber) => {
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  return dayNames[dayNumber] || '';
+};
 
 export function useProfessionalDetails(proId) {
   const [professional, setProfessional] = useState(null);
@@ -25,17 +30,22 @@ export function useProfessionalDetails(proId) {
       }
 
       try {
-        console.log(`Fetching professional with ID: ${proId}`);
+        // التأكد من أن المعرف بالصيغة الصحيحة
+        // التعامل مع المعرف كنص لضمان توافقه مع API
+        const formattedId = String(proId);
+        console.log(`Fetching professional with ID: ${formattedId} (Original: ${proId}, Type: ${typeof proId})`);
         
         // جلب بيانات ملف المحترف
-        const profileResponse = await alistProsService.getProfile(proId);
+        const profileResponse = await proService.getProfile(formattedId);
         console.log('Profile response:', profileResponse);
-        setProfessional(profileResponse.data);
+        const professionalData = profileResponse.data;
+        console.log('Professional data extracted:', professionalData);
+        setProfessional(professionalData);
 
         try {
           // جلب تقييمات المحترف
-          const reviewsResponse = await alistProsService.getReviews(proId);
-          setReviews(reviewsResponse.data.results);
+          const reviewsResponse = await proService.getReviews(proId);
+          setReviews(reviewsResponse.data.results || []);
         } catch (reviewsErr) {
           console.error('Error fetching reviews:', reviewsErr);
           // لا نظهر هذا الخطأ للمستخدم، فقط نترك المراجعات فارغة
@@ -44,8 +54,21 @@ export function useProfessionalDetails(proId) {
 
         try {
           // جلب أوقات توفر المحترف
-          const availabilityResponse = await schedulingService.getAvailability(proId);
-          setAvailability(availabilityResponse.data);
+          const availabilityResponse = await proService.getAvailabilitySlots({ alistpro: proId });
+          const availabilityData = availabilityResponse.data.results || [];
+          
+          // معالجة بيانات التوفر لتحويلها إلى تنسيق أبسط يمكن استخدامه في الواجهة
+          const processedAvailability = availabilityData.map(slot => ({
+            id: slot.id,
+            dayOfWeek: slot.day_of_week,
+            dayName: slot.day_name || getDayName(slot.day_of_week),
+            startTime: slot.start_time,
+            endTime: slot.end_time,
+            isRecurring: slot.is_recurring
+          }));
+          
+          console.log('Processed availability data:', processedAvailability);
+          setAvailability(processedAvailability);
         } catch (availabilityErr) {
           console.error('Error fetching availability:', availabilityErr);
           // لا نظهر هذا الخطأ للمستخدم، فقط نترك الأوقات المتاحة فارغة
@@ -105,7 +128,7 @@ export function useProfessionalDetails(proId) {
         message: message
       };
       
-      const response = await messageService.createConversation(token, conversationData);
+      const response = await messagingService.createConversation(conversationData);
       setMessageLoading(false);
       return response.data;
     } catch (err) {

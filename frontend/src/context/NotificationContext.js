@@ -7,7 +7,7 @@ const NotificationContext = createContext();
 
 // Provider for notifications context
 export const NotificationProvider = ({ children }) => {
-  const { isAuthenticated, getToken } = useAuth();
+  const { isAuthenticated, token } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -16,13 +16,12 @@ export const NotificationProvider = ({ children }) => {
   
   // Fetch notifications from server
   const fetchNotifications = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !token) return;
     
     setLoading(true);
     setError(null);
     
     try {
-      const token = await getToken();
       const response = await axios.get(`${process.env.REACT_APP_API_URL}/notifications/notifications/`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -39,7 +38,7 @@ export const NotificationProvider = ({ children }) => {
       setNotifications(demoNotifications);
       countUnread(demoNotifications);
     }
-  }, [isAuthenticated, getToken]);
+  }, [isAuthenticated, token]);
   
   // Count unread notifications
   const countUnread = (notificationsList) => {
@@ -82,10 +81,9 @@ export const NotificationProvider = ({ children }) => {
   
   // Mark a notification as read
   const markAsRead = async (notificationId) => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !token) return;
     
     try {
-      const token = await getToken();
       await axios.put(
         `${process.env.REACT_APP_API_URL}/notifications/notifications/${notificationId}/read/`,
         {},
@@ -119,10 +117,9 @@ export const NotificationProvider = ({ children }) => {
   
   // Mark all notifications as read
   const markAllAsRead = async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !token) return;
     
     try {
-      const token = await getToken();
       await axios.put(
         `${process.env.REACT_APP_API_URL}/notifications/notifications/read_all/`,
         {},
@@ -148,10 +145,9 @@ export const NotificationProvider = ({ children }) => {
   
   // Delete a notification
   const deleteNotification = async (notificationId) => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !token) return;
     
     try {
-      const token = await getToken();
       await axios.delete(
         `${process.env.REACT_APP_API_URL}/notifications/notifications/${notificationId}/`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -253,4 +249,4 @@ export const useNotifications = () => {
   return context;
 };
 
-export default NotificationContext; 
+export default NotificationContext;

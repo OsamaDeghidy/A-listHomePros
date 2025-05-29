@@ -15,12 +15,12 @@ from .serializers import (
     AppointmentNoteSerializer
 )
 from users.permissions import IsOwnerOrAdmin
-from contractors.models import ContractorProfile
+from alistpros_profiles.models import AListHomeProProfile
 
 
-class IsContractorOwnerOrAdmin(permissions.BasePermission):
+class IsAListHomeProOwnerOrAdmin(permissions.BasePermission):
     """
-    Custom permission to only allow owners of a contractor profile or admins to edit it
+    Custom permission to only allow owners of an A-List Home Pro profile or admins to edit it
     """
     def has_object_permission(self, request, view, obj):
         # Read permissions are allowed to any request
@@ -31,26 +31,26 @@ class IsContractorOwnerOrAdmin(permissions.BasePermission):
         if request.user.is_admin:
             return True
             
-        # Check if user is the contractor owner
-        if hasattr(obj, 'contractor'):
-            return obj.contractor.user == request.user
-        elif isinstance(obj, ContractorProfile):
+        # Check if user is the A-List Home Pro owner
+        if hasattr(obj, 'alistpro'):
+            return obj.alistpro.user == request.user
+        elif isinstance(obj, AListHomeProProfile):
             return obj.user == request.user
             
         return False
 
 
 class AvailabilitySlotViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing contractor availability slots"""
+    """ViewSet for managing A-List Home Pro availability slots"""
     serializer_class = AvailabilitySlotSerializer
-    permission_classes = [permissions.IsAuthenticated, IsContractorOwnerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsAListHomeProOwnerOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['contractor', 'day_of_week', 'is_recurring']
+    filterset_fields = ['alistpro', 'day_of_week', 'is_recurring']
     ordering_fields = ['day_of_week', 'start_time']
     ordering = ['day_of_week', 'start_time']
     
     def get_queryset(self):
-        """Return availability slots for contractors or all if admin"""
+        """Return availability slots for A-List Home Pros or all if admin"""
         # للحماية من أخطاء Swagger
         if getattr(self, 'swagger_fake_view', False):
             return AvailabilitySlot.objects.none()
@@ -58,25 +58,70 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'is_admin') and self.request.user.is_admin:
             return AvailabilitySlot.objects.all()
             
-        # If user is a contractor, return their slots
-        if hasattr(self.request.user, 'contractor_profile'):
-            return AvailabilitySlot.objects.filter(contractor=self.request.user.contractor_profile)
+        # If user is an A-List Home Pro, return their slots
+        if hasattr(self.request.user, 'alistpro_profile'):
+            return AvailabilitySlot.objects.filter(alistpro=self.request.user.alistpro_profile)
             
-        # For clients, return slots for all contractors
+        # For clients, return slots for all A-List Home Pros
         return AvailabilitySlot.objects.all()
+        
+    @action(detail=False, methods=['get'])
+    def for_professional(self, request):
+        """Get availability slots for a specific professional"""
+        pro_id = request.query_params.get('alistpro')
+        
+        if not pro_id:
+            return Response(
+                {'detail': 'Professional ID (alistpro) is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            # Get the professional profile
+            pro_profile = AListHomeProProfile.objects.get(id=pro_id)
+            
+            # Get availability slots for this professional
+            slots = AvailabilitySlot.objects.filter(alistpro=pro_profile)
+            serializer = self.get_serializer(slots, many=True)
+            
+            # Add day_name to each slot for easier frontend processing
+            day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            results = []
+            
+            for slot_data in serializer.data:
+                # Add day_name field based on day_of_week
+                day_of_week = slot_data.get('day_of_week')
+                if 0 <= day_of_week < len(day_names):
+                    slot_data['day_name'] = day_names[day_of_week]
+                results.append(slot_data)
+            
+            return Response({
+                'results': results,
+                'count': slots.count()
+            })
+        except AListHomeProProfile.DoesNotExist:
+            return Response(
+                {'detail': 'Professional not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class UnavailableDateViewSet(viewsets.ModelViewSet):
-    """ViewSet for managing contractor unavailable dates"""
+    """ViewSet for managing A-List Home Pro unavailable dates"""
     serializer_class = UnavailableDateSerializer
-    permission_classes = [permissions.IsAuthenticated, IsContractorOwnerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsAListHomeProOwnerOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['contractor', 'date']
+    filterset_fields = ['alistpro', 'date']
     ordering_fields = ['date']
     ordering = ['date']
     
     def get_queryset(self):
-        """Return unavailable dates for contractors or all if admin"""
+        """Return unavailable dates for A-List Home Pros or all if admin"""
         # للحماية من أخطاء Swagger
         if getattr(self, 'swagger_fake_view', False):
             return UnavailableDate.objects.none()
@@ -84,11 +129,11 @@ class UnavailableDateViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'is_admin') and self.request.user.is_admin:
             return UnavailableDate.objects.all()
             
-        # If user is a contractor, return their unavailable dates
-        if hasattr(self.request.user, 'contractor_profile'):
-            return UnavailableDate.objects.filter(contractor=self.request.user.contractor_profile)
+        # If user is an A-List Home Pro, return their unavailable dates
+        if hasattr(self.request.user, 'alistpro_profile'):
+            return UnavailableDate.objects.filter(alistpro=self.request.user.alistpro_profile)
             
-        # For clients, return unavailable dates for all contractors
+        # For clients, return unavailable dates for all A-List Home Pros
         return UnavailableDate.objects.all()
 
 
@@ -96,7 +141,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     """ViewSet for managing appointments"""
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
-    filterset_fields = ['contractor', 'client', 'appointment_date', 'status']
+    filterset_fields = ['alistpro', 'client', 'appointment_date', 'status']
     ordering_fields = ['appointment_date', 'start_time', 'created_at']
     ordering = ['appointment_date', 'start_time']
     search_fields = ['notes', 'location']
@@ -118,9 +163,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if hasattr(self.request.user, 'role') and self.request.user.role == 'admin':
             return Appointment.objects.all()
             
-        # If user is a contractor, return their appointments
-        if hasattr(self.request.user, 'contractor_profile'):
-            return Appointment.objects.filter(contractor=self.request.user.contractor_profile)
+        # If user is an A-List Home Pro, return their appointments
+        if hasattr(self.request.user, 'alistpro_profile'):
+            return Appointment.objects.filter(alistpro=self.request.user.alistpro_profile)
             
         # For clients, return their appointments
         return Appointment.objects.filter(client=self.request.user)
@@ -151,13 +196,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def confirm(self, request, pk=None):
-        """Confirm an appointment (contractor only)"""
+        """Confirm an appointment (A-List Home Pro only)"""
         appointment = self.get_object()
         
-        # Only contractors can confirm appointments
-        if not hasattr(request.user, 'contractor_profile') or request.user.contractor_profile != appointment.contractor:
+        # Only A-List Home Pros can confirm appointments
+        if not hasattr(request.user, 'alistpro_profile') or request.user.alistpro_profile != appointment.alistpro:
             return Response(
-                {'detail': 'Only the contractor can confirm appointments'},
+                {'detail': 'Only the professional can confirm appointments'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -185,10 +230,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         """Mark an appointment as completed (contractor only)"""
         appointment = self.get_object()
         
-        # Only contractors can mark appointments as completed
-        if not hasattr(request.user, 'contractor_profile') or request.user.contractor_profile != appointment.contractor:
+        # Only A-List Home Pros can mark appointments as completed
+        if not hasattr(request.user, 'alistpro_profile') or request.user.alistpro_profile != appointment.alistpro:
             return Response(
-                {'detail': 'Only the contractor can mark appointments as completed'},
+                {'detail': 'Only the A-List Home Pro can mark appointments as completed'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -216,10 +261,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         """Get upcoming appointments for the current user"""
         today = timezone.now().date()
         
-        if hasattr(request.user, 'contractor_profile'):
-            # For contractors, get their upcoming appointments
+        if hasattr(request.user, 'alistpro_profile'):
+            # For A-List Home Pros, get their upcoming appointments
             appointments = Appointment.objects.filter(
-                contractor=request.user.contractor_profile,
+                alistpro=request.user.alistpro_profile,
                 appointment_date__gte=today,
                 status__in=['REQUESTED', 'CONFIRMED']
             ).order_by('appointment_date', 'start_time')

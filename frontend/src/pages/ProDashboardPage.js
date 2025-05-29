@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { useAuth } from '../hooks/useAuth';
 import { useProfessionalDashboard } from '../hooks/useProfessionalDashboard';
-import { FaCalendarAlt, FaClipboardList, FaCreditCard, FaUser, FaEnvelope, FaBell, FaClock, FaStar, FaCog, FaChartLine } from 'react-icons/fa';
+import { useLanguage } from '../hooks/useLanguage';
+import { proService } from '../services/api';
+import { FaCalendarAlt, FaClipboardList, FaCreditCard, FaUser, FaEnvelope, FaBell, FaClock, FaStar, FaCog, FaChartLine, FaExclamationTriangle, FaCheck } from 'react-icons/fa';
 
 const ProDashboardPage = () => {
   const { currentUser, isAuthenticated } = useAuth();
@@ -30,59 +32,128 @@ const ProDashboardPage = () => {
       return;
     }
 
+    // Load dashboard data when component mounts
     fetchDashboardData();
+
+    // Set up auto-refresh interval (every 5 minutes)
+    const refreshInterval = setInterval(() => {
+      fetchDashboardData();
+    }, 5 * 60 * 1000); // 5 minutes in milliseconds
+
+    // Clear interval on component unmount
+    return () => clearInterval(refreshInterval);
   }, [isAuthenticated, navigate, fetchDashboardData]);
 
   // Handle appointment status change
-  const handleStatusChange = (appointmentId, newStatus) => {
-    updateAppointmentStatus(appointmentId, newStatus);
+  const handleStatusChange = async (appointmentId, newStatus) => {
+    try {
+      await updateAppointmentStatus(appointmentId, newStatus);
+      // Refresh dashboard data after status change
+      fetchDashboardData();
+    } catch (err) {
+      console.error('Error updating appointment status:', err);
+      // You could add a toast notification here
+    }
   };
 
   useEffect(() => {
-    // In a real app, fetch the professional's data from the backend
+    // Fetch the professional's data from the backend
     const fetchProData = async () => {
       try {
         setIsLoading(true);
-        // Simulate API call
-        setTimeout(() => {
-          setProData({
-            name: 'John Smith',
-            profession: 'Plumber',
-            avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-            rating: 4.8,
-            reviewsCount: 24,
-            completedJobs: 32,
-            upcomingAppointments: 3,
-            earnings: {
-              week: 850,
-              month: 3700,
-              total: 15600
-            },
-            recentJobs: [
-              { id: 1, client: 'Emily Johnson', service: 'Pipe Repair', date: '2023-08-15', amount: 120, status: 'completed' },
-              { id: 2, client: 'Michael Brown', service: 'Sink Installation', date: '2023-08-17', amount: 200, status: 'completed' },
-              { id: 3, client: 'Robert Wilson', service: 'Bathroom Fixture', date: '2023-08-20', amount: 350, status: 'scheduled' }
-            ],
-            availability: [
-              { day: 'Monday', slots: ['9:00 AM - 12:00 PM', '2:00 PM - 5:00 PM'] },
-              { day: 'Tuesday', slots: ['9:00 AM - 12:00 PM', '2:00 PM - 5:00 PM'] },
-              { day: 'Wednesday', slots: ['9:00 AM - 12:00 PM'] },
-              { day: 'Thursday', slots: ['2:00 PM - 5:00 PM'] },
-              { day: 'Friday', slots: ['9:00 AM - 12:00 PM', '2:00 PM - 5:00 PM'] },
-              { day: 'Saturday', slots: ['10:00 AM - 2:00 PM'] },
-              { day: 'Sunday', slots: [] }
-            ]
-          });
-          setIsLoading(false);
-        }, 1000);
+        
+        // Fetch profile data from API
+        const profileResponse = await proService.getProfile('me');
+        const userProfile = profileResponse.data;
+        
+        // Fetch upcoming appointments
+        const appointmentsResponse = await proService.getUpcomingAppointments();
+        const upcomingApptsCount = appointmentsResponse.data.results.length;
+        
+        // Fetch completed appointments
+        const allAppointmentsResponse = await proService.getAppointments();
+        const completedAppts = allAppointmentsResponse.data.results.filter(a => a.status === 'completed');
+        
+        // Fetch earnings data
+        const earningsResponse = await proService.getTransactions();
+        const earnings = earningsResponse.data.results || [];
+        
+        const totalEarnings = earnings.reduce((total, transaction) => {
+          return total + (parseFloat(transaction.amount) || 0);
+        }, 0);
+        
+        // Get recent appointments
+        const recentJobs = allAppointmentsResponse.data.results
+          .slice(0, 3)
+          .map(apt => ({
+            id: apt.id,
+            client: apt.client?.name || 'Client',
+            service: apt.service_category?.name || 'Service',
+            date: apt.appointment_date,
+            amount: parseFloat(apt.estimated_cost) || 0,
+            status: apt.status
+          }));
+        
+        // Fetch availability data
+        const availabilityResponse = await proService.getAvailabilitySlots();
+        const availabilityData = availabilityResponse.data.results || [];
+        
+        // Format availability data
+        const dayMap = {
+          0: 'Sunday',
+          1: 'Monday',
+          2: 'Tuesday',
+          3: 'Wednesday',
+          4: 'Thursday',
+          5: 'Friday',
+          6: 'Saturday'
+        };
+        
+        const availability = Object.entries(dayMap).map(([dayNum, dayName]) => {
+          const daySlots = availabilityData
+            .filter(slot => slot.day_of_week === parseInt(dayNum))
+            .map(slot => `${slot.start_time} - ${slot.end_time}`);
+          
+          return {
+            day: dayName,
+            slots: daySlots
+          };
+        });
+        
+        // Set the profile data
+        setProData({
+          id: userProfile.id,
+          name: userProfile.user?.name || 'Professional',
+          profession: userProfile.profession || userProfile.business_name || 'Service Provider',
+          avatar: userProfile.profile_image || 'https://randomuser.me/api/portraits/men/32.jpg',
+          rating: userProfile.average_rating ? parseFloat(userProfile.average_rating) : 0,
+          reviewsCount: userProfile.reviews?.length || 0,
+          completedJobs: completedAppts.length,
+          upcomingAppointments: upcomingApptsCount,
+          earnings: {
+            // These are simplified - in a real app you'd calculate these from transaction history
+            week: totalEarnings * 0.2, // Example: 20% of total earnings in current week
+            month: totalEarnings * 0.8, // Example: 80% of total earnings in current month
+            total: totalEarnings
+          },
+          recentJobs,
+          availability,
+          // Add appointments directly to proData for easy access
+          appointments: allAppointmentsResponse.data.results || []
+        });
+        
+        setIsLoading(false);
       } catch (err) {
-        setError('Failed to load professional data');
+        console.error('Error fetching professional data:', err);
+        setError('Failed to load professional data. Please try again later.');
         setIsLoading(false);
       }
     };
     
-    fetchProData();
-  }, []);
+    if (isAuthenticated) {
+      fetchProData();
+    }
+  }, [isAuthenticated]);
 
   if (loading) {
     return (
@@ -338,20 +409,18 @@ const ProDashboardPage = () => {
                         </div>
                         <div className="ml-4">
                           <p className="text-sm text-gray-500">Upcoming</p>
-                          <p className="text-xl font-semibold">{stats.upcomingAppointments}</p>
+                          <p className="text-xl font-semibold">{stats?.upcomingAppointments || proData.upcomingAppointments || 0}</p>
                         </div>
                       </div>
                     </div>
                     <div className="bg-white rounded-lg shadow-md p-5">
                       <div className="flex items-center">
                         <div className="p-3 rounded-full bg-green-50 text-green-600">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
+                          <FaCheck className="w-6 h-6" />
                         </div>
                         <div className="ml-4">
                           <p className="text-sm text-gray-500">Completed</p>
-                          <p className="text-xl font-semibold">{stats.completedAppointments}</p>
+                          <p className="text-xl font-semibold">{stats?.completedAppointments || proData.completedJobs || 0}</p>
                         </div>
                       </div>
                     </div>
@@ -362,7 +431,7 @@ const ProDashboardPage = () => {
                         </div>
                         <div className="ml-4">
                           <p className="text-sm text-gray-500">Earnings</p>
-                          <p className="text-xl font-semibold">${stats.totalEarnings}</p>
+                          <p className="text-xl font-semibold">${stats?.totalEarnings?.toFixed(2) || proData.earnings?.total?.toFixed(2) || '0.00'}</p>
                         </div>
                       </div>
                     </div>
@@ -374,8 +443,8 @@ const ProDashboardPage = () => {
                         <div className="ml-4">
                           <p className="text-sm text-gray-500">Rating</p>
                           <div className="flex items-center">
-                            <p className="text-xl font-semibold mr-2">{stats.averageRating}</p>
-                            <span className="text-sm text-gray-500">({stats.reviewsCount})</span>
+                            <p className="text-xl font-semibold mr-2">{stats?.averageRating || proData.rating || '0.0'}</p>
+                            <span className="text-sm text-gray-500">({stats?.reviewsCount || proData.reviewsCount || 0})</span>
                           </div>
                         </div>
                       </div>
@@ -383,14 +452,11 @@ const ProDashboardPage = () => {
                     <div className="bg-white rounded-lg shadow-md p-5">
                       <div className="flex items-center">
                         <div className="p-3 rounded-full bg-blue-50 text-blue-600">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
+                          <FaUser className="w-6 h-6" />
                         </div>
                         <div className="ml-4">
                           <p className="text-sm text-gray-500">Profile Views</p>
-                          <p className="text-xl font-semibold">{stats.viewsThisMonth}</p>
+                          <p className="text-xl font-semibold">{stats?.viewsThisMonth || '0'}</p>
                         </div>
                       </div>
                     </div>
@@ -408,7 +474,7 @@ const ProDashboardPage = () => {
                       </button>
                     </div>
                     <div className="p-4">
-                      {appointments.length > 0 ? (
+                      {appointments && appointments.length > 0 ? (
                         <div className="divide-y divide-gray-100">
                           {appointments.map(appointment => (
                             <div 
@@ -418,17 +484,21 @@ const ProDashboardPage = () => {
                               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex items-start mb-3 sm:mb-0">
                                   <img 
-                                    src={appointment.client.avatar} 
-                                    alt={appointment.client.name}
-                                    className="w-12 h-12 rounded-full mr-4" 
+                                    src={appointment.client?.profile_image || 'https://randomuser.me/api/portraits/lego/1.jpg'} 
+                                    alt={appointment.client?.name || 'Client'}
+                                    className="w-12 h-12 rounded-full mr-4 object-cover" 
+                                    onError={(e) => {
+                                      e.target.onerror = null;
+                                      e.target.src = 'https://randomuser.me/api/portraits/lego/1.jpg';
+                                    }}
                                   />
                                   <div>
-                                    <h3 className="font-medium text-gray-900">{appointment.service}</h3>
-                                    <p className="text-sm text-gray-600">with {appointment.client.name}</p>
+                                    <h3 className="font-medium text-gray-900">{appointment.service_category?.name || 'Service'}</h3>
+                                    <p className="text-sm text-gray-600">with {appointment.client?.name || 'Client'}</p>
                                     <div className="flex items-center mt-1">
                                       <FaCalendarAlt className="w-4 h-4 text-gray-400 mr-1" />
                                       <span className="text-sm text-gray-500">
-                                        {new Date(appointment.date).toLocaleDateString()} at {appointment.time}
+                                        {new Date(appointment.appointment_date).toLocaleDateString()} at {appointment.start_time || 'TBD'}
                                       </span>
                                     </div>
                                   </div>
@@ -437,9 +507,13 @@ const ProDashboardPage = () => {
                                   <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full mr-3 ${
                                     appointment.status === 'confirmed' 
                                       ? 'bg-green-100 text-green-800' 
-                                      : 'bg-yellow-100 text-yellow-800'
+                                      : appointment.status === 'pending'
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : appointment.status === 'completed'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : 'bg-gray-100 text-gray-800'
                                   }`}>
-                                    {appointment.status === 'confirmed' ? 'Confirmed' : 'Pending'}
+                                    {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
                                   </span>
                                   <div className="flex flex-col space-y-2">
                                     <Link 
@@ -448,12 +522,14 @@ const ProDashboardPage = () => {
                                     >
                                       Details
                                     </Link>
-                                    <button 
-                                      onClick={() => handleStatusChange(appointment.id, 'completed')}
-                                      className="text-green-600 hover:text-green-800 text-sm font-medium"
-                                    >
-                                      Complete
-                                    </button>
+                                    {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                                      <button 
+                                        onClick={() => handleStatusChange(appointment.id, 'completed')}
+                                        className="text-green-600 hover:text-green-800 text-sm font-medium"
+                                      >
+                                        Complete
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -507,15 +583,36 @@ const ProDashboardPage = () => {
                     <h2 className="font-semibold text-gray-800">My Appointments</h2>
                   </div>
                   <div className="p-4">
-                    <div className="mb-4">
-                      <div className="flex space-x-2">
-                        <button className="px-4 py-2 bg-blue-600 text-white rounded-md">Upcoming</button>
-                        <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md">Completed</button>
-                        <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md">Cancelled</button>
+                      <div className="mb-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button 
+                          onClick={() => fetchDashboardData('upcoming')} 
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                          Upcoming
+                        </button>
+                        <button 
+                          onClick={() => fetchDashboardData('completed')} 
+                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                        >
+                          Completed
+                        </button>
+                        <button 
+                          onClick={() => fetchDashboardData('cancelled')} 
+                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                        >
+                          Cancelled
+                        </button>
+                        <button 
+                          onClick={() => fetchDashboardData('all')} 
+                          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                        >
+                          All Appointments
+                        </button>
                       </div>
                     </div>
 
-                    {appointments.length > 0 ? (
+                    {appointments && appointments.length > 0 ? (
                       <div className="divide-y divide-gray-100">
                         {appointments.map(appointment => (
                           <div 
@@ -525,33 +622,43 @@ const ProDashboardPage = () => {
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                               <div className="flex items-start mb-3 sm:mb-0">
                                 <img 
-                                  src={appointment.client.avatar} 
-                                  alt={appointment.client.name}
-                                  className="w-16 h-16 rounded-full mr-4" 
+                                  src={appointment.client?.profile_image || 'https://randomuser.me/api/portraits/lego/1.jpg'} 
+                                  alt={appointment.client?.name || 'Client'}
+                                  className="w-16 h-16 rounded-full mr-4 object-cover" 
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'https://randomuser.me/api/portraits/lego/1.jpg';
+                                  }}
                                 />
                                 <div>
-                                  <h3 className="font-medium text-lg text-gray-900">{appointment.service}</h3>
-                                  <p className="text-sm text-gray-600">Client: {appointment.client.name}</p>
+                                  <h3 className="font-medium text-lg text-gray-900">{appointment.service_category?.name || 'Service'}</h3>
+                                  <p className="text-sm text-gray-600">Client: {appointment.client?.name || 'Client'}</p>
                                   <div className="flex items-center mt-1">
                                     <FaCalendarAlt className="w-4 h-4 text-gray-400 mr-1" />
                                     <span className="text-sm text-gray-500">
-                                      {new Date(appointment.date).toLocaleDateString()} at {appointment.time}
+                                      {new Date(appointment.appointment_date).toLocaleDateString()} at {appointment.start_time || 'TBD'}
                                     </span>
                                   </div>
-                                  <p className="text-sm text-gray-500 mt-1">{appointment.address}</p>
+                                  <p className="text-sm text-gray-500 mt-1">{appointment.location || 'Location not specified'}</p>
                                 </div>
                               </div>
                               <div className="flex flex-col items-end">
                                 <div className="mb-2">
-                                  <span className="text-lg font-medium text-gray-900">${appointment.price}</span>
+                                  <span className="text-lg font-medium text-gray-900">${appointment.estimated_cost || '0.00'}</span>
                                 </div>
                                 <div className="mb-2">
                                   <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${
                                     appointment.status === 'confirmed' 
                                       ? 'bg-green-100 text-green-800' 
-                                      : 'bg-yellow-100 text-yellow-800'
+                                      : appointment.status === 'pending'
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : appointment.status === 'completed'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : appointment.status === 'cancelled'
+                                            ? 'bg-red-100 text-red-800'
+                                            : 'bg-gray-100 text-gray-800'
                                   }`}>
-                                    {appointment.status === 'confirmed' ? 'Confirmed' : 'Pending'}
+                                    {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
                                   </span>
                                 </div>
                                 <div className="flex space-x-2">
@@ -561,12 +668,22 @@ const ProDashboardPage = () => {
                                   >
                                     Details
                                   </Link>
-                                  <button 
-                                    onClick={() => handleStatusChange(appointment.id, 'completed')}
-                                    className="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
-                                  >
-                                    Complete
-                                  </button>
+                                  {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                                    <button 
+                                      onClick={() => handleStatusChange(appointment.id, 'completed')}
+                                      className="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700"
+                                    >
+                                      Complete
+                                    </button>
+                                  )}
+                                  {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
+                                    <button 
+                                      onClick={() => handleStatusChange(appointment.id, 'cancelled')}
+                                      className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
+                                    >
+                                      Cancel
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>

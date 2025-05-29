@@ -3,6 +3,7 @@ from .views import (
     StripeOnboardingView,
     StripeAccountStatusView,
     PaymentCreateView,
+    PaymentSessionCreateView,
     PaymentListView,
     PaymentDetailView,
     stripe_webhook,
@@ -17,6 +18,7 @@ urlpatterns = [
     
     # Payments
     path('create/', PaymentCreateView.as_view(), name='payment-create'),
+    path('create-session/', PaymentSessionCreateView.as_view(), name='payment-session-create'),
     path('', PaymentListView.as_view(), name='payment-list'),
     path('<int:pk>/', PaymentDetailView.as_view(), name='payment-detail'),
     

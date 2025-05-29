@@ -68,4 +68,4 @@ export const useLanguage = () => {
   return context;
 };
 
-export default useLanguage; 
+// لا نصدر هذا الملف كـ default لتجنب تضارب الاستيراد

@@ -1,25 +1,25 @@
 from django.contrib import admin
-from .models import DashboardStat, ContractorStat, ServiceCategoryStat, UserActivity, SearchQuery
+from .models import DashboardStat, AListHomeProStat, ServiceCategoryStat, UserActivity, SearchQuery
 
 
 @admin.register(DashboardStat)
 class DashboardStatAdmin(admin.ModelAdmin):
-    list_display = ['id', 'date', 'new_users', 'new_contractors', 'new_appointments', 'completed_appointments', 'total_payment_volume']
+    list_display = ['id', 'date', 'new_users', 'new_alistpros', 'new_appointments', 'completed_appointments', 'total_payment_volume']
     list_filter = ['date']
     readonly_fields = ['created_at', 'updated_at']
 
 
-@admin.register(ContractorStat)
-class ContractorStatAdmin(admin.ModelAdmin):
-    list_display = ['id', 'contractor', 'date', 'profile_views', 'appointment_requests', 'completed_appointments', 'total_earnings', 'average_rating']
-    list_filter = ['date', 'contractor']
-    search_fields = ['contractor__business_name', 'contractor__user__name']
+@admin.register(AListHomeProStat)
+class AListHomeProStatAdmin(admin.ModelAdmin):
+    list_display = ['id', 'alistpro', 'date', 'profile_views', 'appointment_requests', 'completed_appointments', 'total_earnings', 'average_rating']
+    list_filter = ['date', 'alistpro']
+    search_fields = ['alistpro__business_name', 'alistpro__user__name']
     readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(ServiceCategoryStat)
 class ServiceCategoryStatAdmin(admin.ModelAdmin):
-    list_display = ['id', 'service_category', 'date', 'contractor_count', 'appointment_count', 'average_price']
+    list_display = ['id', 'service_category', 'date', 'alistpro_count', 'appointment_count', 'average_price']
     list_filter = ['date', 'service_category']
     search_fields = ['service_category__name']
     readonly_fields = ['created_at', 'updated_at']

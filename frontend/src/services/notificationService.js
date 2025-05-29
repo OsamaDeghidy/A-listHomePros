@@ -159,6 +159,56 @@ export default new NotificationService();
 // Default notification type is 'info'
 const DEFAULT_DURATION = 5000; // 5 seconds
 
+// بيانات إشعارات تجريبية للاختبار
+// Demo notification data for testing
+const getDemoNotifications = () => [
+  {
+    id: 1,
+    title: 'New Message',
+    message: 'You have received a new message from John Doe',
+    category: 'message',
+    read: false,
+    createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 minutes ago
+    link: '/messages/1'
+  },
+  {
+    id: 2,
+    title: 'Booking Confirmed',
+    message: 'Your booking with Sarah Plumber has been confirmed',
+    category: 'booking',
+    read: true,
+    createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(), // 1 hour ago
+    link: '/bookings/2'
+  },
+  {
+    id: 3,
+    title: 'Payment Processed',
+    message: 'Your payment of $150 has been successfully processed',
+    category: 'payment',
+    read: false,
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(), // 3 hours ago
+    link: '/payments/3'
+  },
+  {
+    id: 4,
+    title: 'Welcome to A-List Home Pros',
+    message: 'Thank you for joining our platform. Get started by completing your profile.',
+    category: 'system',
+    read: true,
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
+    link: '/profile'
+  },
+  {
+    id: 5,
+    title: 'New Feature Available',
+    message: 'Check out our new messaging system for better communication with professionals',
+    category: 'system',
+    read: false,
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(), // 2 days ago
+    link: '/help/features'
+  }
+];
+
 // إنشاء سياق الإشعارات
 // Create notification context
 const NotificationContext = createContext();
@@ -203,68 +253,16 @@ export const NotificationProvider = ({ children }) => {
       
       // في حالة فشل الاتصال بالخادم، استخدم بيانات تجريبية للاختبار
       // In case of server connection failure, use demo data for testing
-      useDemoDataOnFailure();
+      const demoData = getDemoNotifications();
+      setNotifications(demoData);
+      setUnreadCount(demoData.filter(n => !n.read).length);
       
       setLoading(false);
     }
   }, [isAuthenticated]);
 
-  // استخدام بيانات تجريبية في حالة فشل الاتصال بالخادم
-  // Use demo data in case of server connection failure
-  const useDemoDataOnFailure = () => {
-    // بيانات تجريبية للاختبار
-    // Demo data for testing
-    const demoNotifications = [
-      {
-        id: 1,
-        title: 'New Message',
-        message: 'You have received a new message from John Doe',
-        category: 'message',
-        read: false,
-        createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 minutes ago
-        link: '/messages/1'
-      },
-      {
-        id: 2,
-        title: 'Booking Confirmed',
-        message: 'Your booking with Sarah Plumber has been confirmed',
-        category: 'booking',
-        read: true,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(), // 1 hour ago
-        link: '/bookings/2'
-      },
-      {
-        id: 3,
-        title: 'Payment Processed',
-        message: 'Your payment of $150 has been successfully processed',
-        category: 'payment',
-        read: false,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(), // 3 hours ago
-        link: '/payments/3'
-      },
-      {
-        id: 4,
-        title: 'Welcome to A-List Home Pros',
-        message: 'Thank you for joining our platform. Get started by completing your profile.',
-        category: 'system',
-        read: true,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
-        link: '/profile'
-      },
-      {
-        id: 5,
-        title: 'New Feature Available',
-        message: 'Check out our new messaging system for better communication with professionals',
-        category: 'system',
-        read: false,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(), // 2 days ago
-        link: '/help/features'
-      }
-    ];
-    
-    setNotifications(demoNotifications);
-    setUnreadCount(demoNotifications.filter(n => !n.read).length);
-  };
+  // جلب الإشعارات عند تغيير حالة المصادقة
+  // Fetch notifications when authentication state changes
 
   // جلب الإشعارات عند تغيير حالة المصادقة
   // Fetch notifications when authentication state changes

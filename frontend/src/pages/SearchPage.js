@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { alistProsService } from '../services/api';
+import { proService, serviceService } from '../services/api';
 import { FaList, FaMapMarked, FaFilter, FaSearch } from 'react-icons/fa';
 import SearchFilters from '../components/search/SearchFilters';
 import ProsList from '../components/search/ProsList';
@@ -20,14 +20,16 @@ const SearchPage = () => {
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-  
+
   // Extract search params from URL if any
   const searchParams = new URLSearchParams(location.search);
   const initialLocation = searchParams.get('location') || '';
   const initialService = searchParams.get('service') || '';
+  const initialServiceName = searchParams.get('name') || '';
   const initialFilters = {
     location: initialLocation,
     category: initialService,
+    categoryName: initialServiceName,
     rating: parseInt(searchParams.get('rating') || '0', 10),
     priceRange: [
       parseInt(searchParams.get('min_price') || '0', 10),
@@ -37,7 +39,7 @@ const SearchPage = () => {
       ? searchParams.get('availability').split(',') 
       : []
   };
-  
+
   // Animation variants
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -50,59 +52,77 @@ const SearchPage = () => {
       }
     }
   };
-  
+
   const itemVariants = {
     hidden: { y: 20, opacity: 0 },
     visible: { y: 0, opacity: 1 }
   };
 
-  // Fetch search results based on URL params on initial load
+  // Fetch search results on initial load, with or without filters
   useEffect(() => {
-    if (initialLocation || initialService) {
-      fetchSearchResults(initialFilters);
-    }
+    fetchSearchResults(initialFilters);
   }, []);
-  
+
   const fetchSearchResults = async (filters) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // Convert filters to API parameters
       const params = {
-        location: filters.location,
-        service: filters.category,
         page: currentPage,
-        page_size: 10
+        limit: 10
       };
       
+      // Only add filter params if they have values
+      if (filters.location) {
+        params.location = filters.location;
+      }
+      
+      if (filters.category) {
+        params.service_category = filters.category;
+      }
+
       if (filters.rating > 0) {
         params.min_rating = filters.rating;
       }
-      
+
       if (filters.priceRange[0] > 0) {
         params.min_price = filters.priceRange[0];
       }
-      
+
       if (filters.priceRange[1] < 1000) {
         params.max_price = filters.priceRange[1];
       }
-      
+
       if (filters.availability.length > 0) {
         params.availability = filters.availability.join(',');
       }
-      
+
       // Call API
       console.log('Fetching professionals with params:', params);
-      const response = await alistProsService.getProfiles(params);
-      
+      const response = await proService.searchPros(params);
+
       if (response && response.data) {
-        setSearchResults(response.data.results || []);
-        setTotalResults(response.data.count || 0);
+        console.log('Search API Response:', response.data);
+
+        let results = [];
+        let count = 0;
+
+        if (response.data.results && response.data.results.length > 0) {
+          results = response.data.results;
+          count = response.data.count || response.data.results.length;
+        } else if (response.data && Array.isArray(response.data)) {
+          results = response.data;
+          count = response.data.length;
+        }
+
+        setSearchResults(results);
+        setTotalResults(count);
         setSearchPerformed(true);
-        
+
         // Log success for debugging
-        console.log(`Successfully fetched ${response.data.count} professionals`);
+        console.log(`Successfully fetched ${count} professionals`);
       } else {
         throw new Error('Invalid API response format');
       }
@@ -111,7 +131,7 @@ const SearchPage = () => {
       const errorMessage = err.response?.data?.message || 
                           err.response?.data?.detail || 
                           'Failed to load search results. Please try again later.';
-      
+
       setError(errorMessage);
       // Reset results on error
       setSearchResults([]);
@@ -121,45 +141,47 @@ const SearchPage = () => {
       setLoading(false);
     }
   };
-  
+
   const handleFilterChange = (filters) => {
-    // Update URL with filters
+    // Update URL with new filter parameters
     const params = new URLSearchParams();
-    
-    if (filters.location) params.set('location', filters.location);
-    if (filters.category) params.set('service', filters.category);
-    if (filters.rating > 0) params.set('rating', filters.rating.toString());
-    if (filters.priceRange[0] > 0) params.set('min_price', filters.priceRange[0].toString());
-    if (filters.priceRange[1] < 1000) params.set('max_price', filters.priceRange[1].toString());
-    if (filters.availability.length > 0) params.set('availability', filters.availability.join(','));
-    
-    // Update URL
+
+    if (filters.location) params.append('location', filters.location);
+    if (filters.category) {
+      params.append('service', filters.category);
+      if (filters.categoryName) params.append('name', filters.categoryName);
+    }
+    if (filters.rating > 0) params.append('rating', filters.rating);
+    if (filters.priceRange[0] > 0) params.append('min_price', filters.priceRange[0]);
+    if (filters.priceRange[1] < 1000) params.append('max_price', filters.priceRange[1]);
+    if (filters.availability.length > 0) params.append('availability', filters.availability.join(','));
+
+    // Reset to page 1 when filters change
+    setCurrentPage(1);
+
+    // Update URL without reloading the page
     navigate({
       pathname: location.pathname,
       search: params.toString()
     }, { replace: true });
-    
-    // Reset to first page and fetch results
-    setCurrentPage(1);
+
+    // Fetch results with new filters
     fetchSearchResults(filters);
-    
-    // Close mobile filters if open
-    setIsMobileFiltersOpen(false);
   };
-  
+
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage);
     window.scrollTo(0, 0);
-    
+
     // Update URL with page number
     const params = new URLSearchParams(location.search);
     params.set('page', newPage.toString());
-    
+
     navigate({
       pathname: location.pathname,
       search: params.toString()
     }, { replace: true });
-    
+
     // Refetch with new page
     fetchSearchResults({
       ...initialFilters,
@@ -177,15 +199,15 @@ const SearchPage = () => {
       priceRange: [0, 1000],
       availability: []
     };
-    
+
     // Update URL - remove all query params
     navigate({
       pathname: location.pathname
     }, { replace: true });
-    
+
     // Reset current page
     setCurrentPage(1);
-    
+
     // Apply reset filters
     fetchSearchResults(resetFilters);
   };
@@ -205,7 +227,7 @@ const SearchPage = () => {
     console.log('Pro clicked:', pro);
     // Implement any additional functionality when a pro marker is clicked
   };
-  
+
   return (
     <motion.div 
       className="container mx-auto px-4 py-8"
@@ -219,7 +241,7 @@ const SearchPage = () => {
       >
         {language === 'ar' ? 'البحث عن محترفين خدمات المنزل' : 'Find Home Service Professionals'}
       </motion.h1>
-      
+
       {/* Mobile Controls */}
       <div className="md:hidden mb-6">
         <div className="flex space-x-2">
@@ -230,7 +252,7 @@ const SearchPage = () => {
             <FaFilter className="mr-2" />
             {language === 'ar' ? 'الفلاتر' : 'Filters'}
           </button>
-          
+
           <div className="flex-1 flex rounded-md overflow-hidden border border-gray-300">
             <button
               onClick={() => handleViewModeChange('list')}
@@ -257,7 +279,7 @@ const SearchPage = () => {
           </div>
         </div>
       </div>
-      
+
       <div className="flex flex-col md:flex-row gap-8">
         {/* Sidebar Filters */}
         <motion.div 
@@ -270,7 +292,7 @@ const SearchPage = () => {
             initialCategory={initialService}
           />
         </motion.div>
-        
+
         {/* Main Content */}
         <motion.div 
           className="md:w-3/4"
@@ -306,19 +328,15 @@ const SearchPage = () => {
                 variants={itemVariants}
               >
                 <div className="flex justify-between items-center">
-                  <div>
-                    <h2 className="text-xl font-semibold">
-                      {searchPerformed 
-                        ? language === 'ar' 
-                          ? `تم العثور على ${totalResults} محترف` 
-                          : `${totalResults} professionals found`
-                        : language === 'ar'
-                          ? 'البحث عن محترفين'
-                          : 'Search for professionals'
+                  <div className="mb-6">
+                    <h1 className="text-3xl font-bold mb-2">
+                      {initialFilters.categoryName 
+                        ? (language === 'ar' 
+                            ? `${initialFilters.categoryName} - نتائج البحث` 
+                            : `${initialFilters.categoryName} - Search Results`)
+                        : (language === 'ar' ? 'نتائج البحث' : 'Search Results')
                       }
-                      {initialLocation && (language === 'ar' ? ` في ${initialLocation}` : ` in ${initialLocation}`)}
-                      {initialService && (language === 'ar' ? ` - ${initialService}` : ` - ${initialService}`)}
-                    </h2>
+                    </h1>
                     <p className="text-gray-600 mt-1">
                       {language === 'ar' 
                         ? 'استعرض محترفين مصنفين بتقييمات عالية وجد الشخص المناسب لمشروعك'

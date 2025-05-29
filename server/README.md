@@ -581,16 +581,11 @@ If tests fail, check the following:
    python test_alistpros_integration.py
    ```
 
+   انا قمت ب العمل عل المشروع الماثل امامك باك اند و فرونت اند ب استخدام ال ai   فكره  المشروع موقع يجمع بين مقدمى خدمات صيانه وتصليح المنازل ب امريكا و المستخدمين و ادمن داش بورد م دجاغو   قمت ب عمل الباك اند ب دجانغوا و الفونت ب رياكت    المشكله ان المشروع لم يكتم و به اخطاء فى ربط الباك اند ب الفرونت اند والتسليم اليوم ف اريد جعله يعمل وشكل الموقع جزاب    لكن ل اعرف كيف اصف لك المشكلات و الاسوا من ذلك انك تقوم كل مره ب افساد الكود القديم ولا تقوم ب انجاز المشروع كما  هو مطلوب      انا الان قم بتشغيل السيرفرات الفرونت و الباك و اتابع معك التحديثات والاخطاء لذا تحطى هذه الخطوه  وهذه ملفات المشروع باك و فرونت   اخبرني بما يجب ان نفعله
+
+   cd d:\apps\rectapp\todo\list home\server && python manage.py makemigrations scheduling --name rename_contractor_to_alistpro
 
 
-   echo "# A-listHomePros" >> README.md
-git init
-git add README.md
-git commit -m "first commit"
-git branch -M main
-git remote add origin https://github.com/OsamaDeghidy/A-listHomePros.git
-git push -u origin main
-…or push an existing repository from the command line
-git remote add origin https://github.com/OsamaDeghidy/A-listHomePros.git
-git branch -M main
-git push -u origin main
+   لان نعدنا نبدا فى ربط الصفحات وتطوير الموقع بشكل احترافى اولا صفحه الهو بيج اريدها ان تظهر لى الدتا اللى فى الباك اند لا الفيك داتا   دى معلومات ممكن تساعدك 
+
+   

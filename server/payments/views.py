@@ -24,7 +24,8 @@ from .utils import (
     generate_account_link,
     handle_account_updated_webhook,
     create_payment_intent,
-    get_stripe_dashboard_link
+    get_stripe_dashboard_link,
+    create_payment_session
 )
 from users.permissions import IsAListHomePro, IsClient, IsAdmin
 
@@ -116,6 +117,64 @@ class StripeAccountStatusView(APIView):
             return Response(response_data)
         except Exception as e:
             logger.error(f"Error in StripeAccountStatusView: {str(e)}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PaymentSessionCreateView(APIView):
+    """
+    Create a payment session for booking appointments
+    """
+    permission_classes = [IsClient]
+    
+    def post(self, request):
+        # Validate required fields
+        required_fields = ['alistpro_id', 'amount', 'appointment_id', 'success_url', 'cancel_url']
+        for field in required_fields:
+            if field not in request.data:
+                return Response({
+                    'error': f'Missing required field: {field}'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        
+        pro_id = request.data.get('alistpro_id')
+        amount = float(request.data.get('amount'))
+        appointment_id = request.data.get('appointment_id')
+        success_url = request.data.get('success_url')
+        cancel_url = request.data.get('cancel_url')
+        
+        try:
+            # Get A-List Home Pro profile
+            pro_profile = get_object_or_404(AListHomeProProfile, id=pro_id)
+            
+            # Create payment session
+            session = create_payment_session(
+                request.user,
+                pro_profile,
+                amount,
+                appointment_id,
+                success_url,
+                cancel_url
+            )
+            
+            # Create payment record
+            payment_data = {
+                'client': request.user,
+                'alistpro': pro_profile,
+                'amount': amount,
+                'description': f'Booking payment for appointment #{appointment_id}',
+                'status': 'pending'
+            }
+            
+            payment = Payment.objects.create(**payment_data)
+            
+            return Response({
+                'payment_id': payment.id,
+                'session_id': session.id,
+                'checkout_url': session.url
+            })
+        except Exception as e:
+            logger.error(f"Error in PaymentSessionCreateView: {str(e)}")
             return Response({
                 'error': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)

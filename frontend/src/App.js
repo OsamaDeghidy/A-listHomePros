@@ -25,6 +25,8 @@ import ProProfilePage from './pages/ProProfilePage';
 import ServiceDetailPage from './pages/ServiceDetailPage';
 import BookingPage from './pages/BookingPage';
 import BookingConfirmationPage from './pages/BookingConfirmationPage';
+import AppointmentsPage from './pages/AppointmentsPage';
+import AppointmentDetailsPage from './pages/AppointmentDetailsPage';
 import ClientDashboardPage from './pages/ClientDashboardPage';
 import ProDashboardPage from './pages/ProDashboardPage';
 import ProfileEditPage from './pages/ProfileEditPage';
@@ -52,6 +54,7 @@ import UnauthorizedPage from './pages/UnauthorizedPage';
 
 // Auth & Protected Routes
 import ProtectedRoute from './components/common/ProtectedRoute';
+import DashboardRedirector from './components/common/DashboardRedirector';
 import { useAuth } from './hooks/useAuth';
 
 // Create a client for React Query
@@ -117,6 +120,16 @@ function App() {
                 <BookingConfirmationPage />
               </ProtectedRoute>
             } />
+            <Route path="appointments" element={
+              <ProtectedRoute>
+                <AppointmentsPage />
+              </ProtectedRoute>
+            } />
+            <Route path="appointments/:id" element={
+              <ProtectedRoute>
+                <AppointmentDetailsPage />
+              </ProtectedRoute>
+            } />
             <Route path="payment/:bookingId" element={
               <ProtectedRoute>
                 <PaymentPage />
@@ -128,6 +141,9 @@ function App() {
           {/* Professional Profile Route - Separate from MainLayout to avoid duplicate navbar */}
           <Route path="pros/:id" element={<ProProfilePage />} />
           <Route path="pro/:id" element={<Navigate to="../pros/:id" replace />} />
+          
+          {/* Role-based Dashboard Redirector */}
+          <Route path="dashboard" element={<DashboardRedirector />} />
           
           {/* Dashboard Routes */}
           <Route path="/dashboard" element={

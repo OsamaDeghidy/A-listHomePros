@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { FaStar, FaMapMarkerAlt, FaPhone, FaCalendarAlt } from 'react-icons/fa';
 import MapComponent from '../common/MapComponent';
 import { useLanguage } from '../../hooks/useLanguage';
+import { useAuth } from '../../hooks/useAuth';
 
 const ProsMap = ({ pros = [], onProClick }) => {
   const { language, isRTL } = useLanguage();
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [selectedPro, setSelectedPro] = useState(null);
 
   // تنسيق البيانات لمكون الخريطة
@@ -74,18 +77,30 @@ const ProsMap = ({ pros = [], onProClick }) => {
       </div>
       
       <div className="border-t border-gray-100 p-2 bg-gray-50 flex justify-between">
-        <Link
-          to={`/pros/${pro.id}`}
+        <button
+          onClick={() => {
+            if (isAuthenticated) {
+              navigate(`/pros/${pro.id}`);
+            } else {
+              navigate(`/login?redirect=/pros/${pro.id}`);
+            }
+          }}
           className="text-sm text-blue-600 font-medium hover:text-blue-800 transition-colors"
         >
           {language === 'ar' ? 'عرض الملف الشخصي' : 'View Profile'}
-        </Link>
-        <Link
-          to={`/booking/${pro.id}`}
+        </button>
+        <button
+          onClick={() => {
+            if (isAuthenticated) {
+              navigate(`/booking/${pro.id}`);
+            } else {
+              navigate(`/login?redirect=/booking/${pro.id}`);
+            }
+          }}
           className="text-sm text-blue-600 font-medium hover:text-blue-800 transition-colors"
         >
           {language === 'ar' ? 'احجز الآن' : 'Book Now'}
-        </Link>
+        </button>
       </div>
     </div>
   );
@@ -133,18 +148,30 @@ const ProsMap = ({ pros = [], onProClick }) => {
               </button>
             </div>
             <div className="mt-2 flex gap-3">
-              <Link
-                to={`/pros/${selectedPro.id}`}
+              <button
+                onClick={() => {
+                  if (isAuthenticated) {
+                    navigate(`/pros/${selectedPro.id}`);
+                  } else {
+                    navigate(`/login?redirect=/pros/${selectedPro.id}`);
+                  }
+                }}
                 className="flex-1 text-center text-sm bg-white border border-blue-600 text-blue-600 py-1 px-2 rounded hover:bg-blue-50 transition-colors"
               >
                 {language === 'ar' ? 'عرض الملف الشخصي' : 'View Profile'}
-              </Link>
-              <Link
-                to={`/booking/${selectedPro.id}`}
+              </button>
+              <button
+                onClick={() => {
+                  if (isAuthenticated) {
+                    navigate(`/booking/${selectedPro.id}`);
+                  } else {
+                    navigate(`/login?redirect=/booking/${selectedPro.id}`);
+                  }
+                }}
                 className="flex-1 text-center text-sm bg-blue-600 text-white py-1 px-2 rounded hover:bg-blue-700 transition-colors"
               >
                 {language === 'ar' ? 'احجز الآن' : 'Book Now'}
-              </Link>
+              </button>
             </div>
           </div>
         )}

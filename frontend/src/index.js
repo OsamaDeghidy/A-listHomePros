@@ -6,7 +6,6 @@ import reportWebVitals from './reportWebVitals';
 import { AuthProvider } from './hooks/useAuth';
 import { LanguageProvider } from './hooks/useLanguage';
 import { NotificationProvider } from './context/NotificationContext';
-import ToastContainer from './components/notifications/ToastContainer';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
@@ -15,7 +14,6 @@ root.render(
       <AuthProvider>
         <NotificationProvider>
           <App />
-          <ToastContainer />
         </NotificationProvider>
       </AuthProvider>
     </LanguageProvider>

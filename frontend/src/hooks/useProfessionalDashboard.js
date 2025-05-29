@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   proService, 
-  bookingService, 
+  schedulingService,
   paymentService,
   notificationService
 } from '../services/api';
 
 export function useProfessionalDashboard() {
+  // Auto-fetch dashboard data on first load
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -22,163 +26,129 @@ export function useProfessionalDashboard() {
   const [reviews, setReviews] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (appointmentFilter = 'upcoming') => {
     setLoading(true);
+    setError(null);
+    
     try {
-      // In a production app, these would be real API calls
-      // For now, we're making individual calls and combining the data
-      
       // Get professional's profile
       const profileResponse = await proService.getProfile('me');
       const proId = profileResponse.data.id;
+      const profileData = profileResponse.data;
       
-      // Get appointments
-      const appointmentsResponse = await bookingService.getBookings();
-      setAppointments(appointmentsResponse.data.results);
+      // Get appointments based on filter
+      let appointmentsResponse;
+      if (appointmentFilter === 'upcoming') {
+        appointmentsResponse = await proService.getUpcomingAppointments();
+      } else if (appointmentFilter === 'completed') {
+        appointmentsResponse = await schedulingService.getAppointments({ status: 'completed' });
+      } else if (appointmentFilter === 'cancelled') {
+        appointmentsResponse = await schedulingService.getAppointments({ status: 'cancelled' });
+      } else {
+        // Get all appointments
+        appointmentsResponse = await schedulingService.getAppointments();
+      }
+      
+      // Set appointments with data validation
+      const appointmentsData = appointmentsResponse.data.results || [];
+      setAppointments(appointmentsData);
       
       // Get services offered by professional
-      const servicesResponse = await proService.getCategories();
-      setServices(servicesResponse.data.results);
+      try {
+        const servicesResponse = await proService.getCategories();
+        setServices(servicesResponse.data.results || []);
+      } catch (serviceError) {
+        console.error('Error fetching services:', serviceError);
+        setServices([]);
+      }
       
-      // Get reviews
-      const reviewsResponse = await proService.getReviews(proId);
-      setReviews(reviewsResponse.data.results);
+      // Get reviews with error handling
+      try {
+        const reviewsResponse = await proService.getReviews(proId);
+        setReviews(reviewsResponse.data.results || []);
+      } catch (reviewError) {
+        console.error('Error fetching reviews:', reviewError);
+        setReviews([]);
+      }
       
-      // Get notifications/activity
-      const notificationsResponse = await notificationService.getNotifications();
-      setActivityLog(notificationsResponse.data.results);
+      // Get notifications/activity with error handling
+      try {
+        const notificationsResponse = await notificationService.getNotifications();
+        const notificationsData = notificationsResponse.data.results || [];
+        
+        // Map notifications to activity log format
+        const formattedActivity = notificationsData.map(notification => ({
+          id: notification.id,
+          type: notification.notification_type || 'general',
+          content: notification.message || notification.content || 'New notification',
+          timestamp: notification.created_at || new Date().toISOString(),
+        }));
+        
+        setActivityLog(formattedActivity);
+      } catch (notificationError) {
+        console.error('Error fetching notifications:', notificationError);
+        setActivityLog([]);
+      }
       
       // Calculate statistics
-      const upcomingAppts = appointmentsResponse.data.results.filter(
+      // Get all appointments for statistics
+      const allAppointmentsResponse = await schedulingService.getAppointments();
+      const allAppointments = allAppointmentsResponse.data.results || [];
+      
+      const upcomingAppts = allAppointments.filter(
         appt => appt.status === 'confirmed' || appt.status === 'pending'
       );
-      const completedAppts = appointmentsResponse.data.results.filter(
+      
+      const completedAppts = allAppointments.filter(
         appt => appt.status === 'completed'
       );
       
-      // Get earnings data
-      const earningsResponse = await paymentService.getTransactions();
-      const totalEarnings = earningsResponse.data.results.reduce(
-        (total, transaction) => total + transaction.amount,
-        0
-      );
+      // Get earnings data with error handling
+      let totalEarnings = 0;
+      try {
+        const earningsResponse = await paymentService.getTransactions();
+        const transactions = earningsResponse.data.results || [];
+        
+        totalEarnings = transactions.reduce(
+          (total, transaction) => total + (parseFloat(transaction.amount) || 0),
+          0
+        );
+      } catch (earningsError) {
+        console.error('Error fetching earnings:', earningsError);
+      }
       
+      // Update statistics with validated data
       setStats({
         upcomingAppointments: upcomingAppts.length,
         completedAppointments: completedAppts.length,
         totalEarnings,
-        averageRating: profileResponse.data.rating,
-        reviewsCount: reviewsResponse.data.count,
-        viewsThisMonth: profileResponse.data.views_this_month || 0,
+        averageRating: parseFloat(profileData.average_rating) || 0,
+        reviewsCount: profileData.reviews?.length || 0,
+        viewsThisMonth: profileData.views_this_month || 0,
       });
       
       setLoading(false);
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
-      
-      // Fallback to mock data in case of error (can be removed in production)
-      fetchMockData();
-      
-      setError('Could not connect to server. Showing demo data instead.');
+      setError('فشل في الاتصال بالخادم. يرجى المحاولة مرة أخرى لاحقاً.');
+      setLoading(false);
     }
   };
   
-  // Fallback mock data function (for development or when API is unavailable)
-  const fetchMockData = () => {
-    // Mock appointments data
-    const mockAppointments = [
-      {
-        id: 1,
-        client: {
-          id: 1,
-          name: 'Sarah Johnson',
-          avatar: 'https://randomuser.me/api/portraits/women/11.jpg',
-        },
-        service: 'Pipe Repair',
-        date: '2023-08-15',
-        time: '10:00 AM',
-        address: '123 Main St, Anytown',
-        status: 'confirmed',
-        price: 120
-      },
-      {
-        id: 2,
-        client: {
-          id: 2,
-          name: 'Michael Thompson',
-          avatar: 'https://randomuser.me/api/portraits/men/32.jpg',
-        },
-        service: 'Drain Cleaning',
-        date: '2023-08-20',
-        time: '2:00 PM',
-        address: '456 Oak Ave, Anytown',
-        status: 'pending',
-        price: 95
-      },
-      {
-        id: 3,
-        client: {
-          id: 3,
-          name: 'Emily Rodriguez',
-          avatar: 'https://randomuser.me/api/portraits/women/44.jpg',
-        },
-        service: 'Fixture Installation',
-        date: '2023-08-22',
-        time: '11:30 AM',
-        address: '789 Pine St, Anytown',
-        status: 'confirmed',
-        price: 150
-      }
-    ];
-    
-    setAppointments(mockAppointments);
-    
-    // Mock statistics
-    setStats({
-      upcomingAppointments: 3,
-      completedAppointments: 27,
-      totalEarnings: 3450,
-      averageRating: 4.8,
-      reviewsCount: 42,
-      viewsThisMonth: 156,
-    });
-    
-    // Mock activity log
-    setActivityLog([
-      {
-        id: 1,
-        type: 'appointment_completed',
-        content: 'You completed an appointment with David Miller',
-        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 2,
-        type: 'new_appointment',
-        content: 'New appointment scheduled with Sarah Wilson',
-        timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 3,
-        type: 'new_review',
-        content: 'You received a 5-star review from Michael Brown',
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 4,
-        type: 'payment_received',
-        content: 'Payment of $150 received for Fixture Installation',
-        timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      }
-    ]);
-    
-    setLoading(false);
+  // Helper function to convert date formats and handle errors
+  const formatDate = (dateString) => {
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch (err) {
+      return dateString || 'Date unavailable';
+    }
   };
 
   // Function to update appointment status
   const updateAppointmentStatus = async (appointmentId, newStatus) => {
     try {
-      // In a real app, this would call the API
-      await bookingService.updateBooking(appointmentId, { status: newStatus });
+      // Call the API to update the appointment status
+      await proService.updateAppointmentStatus(appointmentId, newStatus);
       
       // Update local state
       setAppointments(prevAppointments => 
@@ -191,22 +161,20 @@ export function useProfessionalDashboard() {
       if (newStatus === 'completed') {
         setStats(prevStats => ({
           ...prevStats,
-          upcomingAppointments: prevStats.upcomingAppointments - 1,
+          upcomingAppointments: Math.max(0, prevStats.upcomingAppointments - 1),
           completedAppointments: prevStats.completedAppointments + 1,
+        }));
+      } else if (newStatus === 'cancelled' && appointments.find(a => a.id === appointmentId)?.status !== 'completed') {
+        setStats(prevStats => ({
+          ...prevStats,
+          upcomingAppointments: Math.max(0, prevStats.upcomingAppointments - 1),
         }));
       }
       
       return true;
     } catch (err) {
       console.error('Error updating appointment status:', err);
-      
-      // Fallback for development: update state even if API fails
-      setAppointments(prevAppointments => 
-        prevAppointments.map(appt => 
-          appt.id === appointmentId ? { ...appt, status: newStatus } : appt
-        )
-      );
-      
+      setError('فشل في تحديث حالة الموعد. يرجى المحاولة مرة أخرى.');
       return false;
     }
   };

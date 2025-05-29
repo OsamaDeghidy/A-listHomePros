@@ -4,6 +4,7 @@ from . import views
 
 router = DefaultRouter()
 router.register(r'profiles', views.AListHomeProProfileViewSet)
+router.register(r'reviews', views.AListHomeProReviewViewSet, basename='alistproreview')
 
 urlpatterns = [
     path('', include(router.urls)),

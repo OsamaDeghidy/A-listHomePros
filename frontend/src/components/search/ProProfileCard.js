@@ -160,8 +160,8 @@ const ProProfileCard = ({ pro, onHireClick, showHireButton = true, className = '
         <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
           <div className="text-xs text-gray-500 flex items-center">
             <FaCalendarAlt className="mr-1" />
-            {pro.availability ? (
-              <span className="text-green-600">Available {pro.availability}</span>
+            {Array.isArray(pro.availability) && pro.availability.length > 0 ? (
+              <span className="text-green-600">Available for booking</span>
             ) : (
               <span>Check availability</span>
             )}

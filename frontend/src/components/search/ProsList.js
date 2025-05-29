@@ -1,89 +1,18 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaStar, FaMapMarkerAlt, FaPhone, FaCalendarAlt, FaSearch } from 'react-icons/fa';
 import { useLanguage } from '../../hooks/useLanguage';
+import { useAuth } from '../../hooks/useAuth';
 
 const ProsList = ({ pros = [] }) => {
   const { language, isRTL } = useLanguage();
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [view, setView] = useState('list'); // 'list' or 'grid'
   const [sortBy, setSortBy] = useState('rating'); // 'rating', 'reviews', or 'name'
 
-  // If no pros are provided, use this sample data
-  const samplePros = [
-    {
-      id: 1,
-      business_name: "John Smith",
-      profession: "Plumber",
-      service_categories: [{ name: "Plumbing" }],
-      average_rating: 4.8,
-      review_count: 124,
-      location: { 
-        address: "Cairo, EG",
-        coordinates: [30.0444, 31.2357] 
-      },
-      business_description: "Professional plumber with over 15 years of experience in residential and commercial plumbing services.",
-      profile_image: "https://randomuser.me/api/portraits/men/1.jpg"
-    },
-    {
-      id: 2,
-      business_name: "Sarah Johnson",
-      profession: "Electrician",
-      service_categories: [{ name: "Electrical" }],
-      average_rating: 4.9,
-      review_count: 89,
-      location: { 
-        address: "Alexandria, EG",
-        coordinates: [31.2001, 29.9187]
-      },
-      business_description: "Licensed electrician specializing in electrical repairs, installations, and maintenance for homes and businesses.",
-      profile_image: "https://randomuser.me/api/portraits/women/2.jpg"
-    },
-    {
-      id: 3,
-      business_name: "Michael Brown",
-      profession: "Carpenter",
-      service_categories: [{ name: "Carpentry" }],
-      average_rating: 4.7,
-      review_count: 56,
-      location: {
-        address: "Giza, EG",
-        coordinates: [30.0131, 31.2089]
-      },
-      business_description: "Custom carpentry, woodworking, and home renovations. Quality craftsmanship for all your projects.",
-      profile_image: "https://randomuser.me/api/portraits/men/3.jpg"
-    },
-    {
-      id: 4,
-      business_name: "Emily Davis",
-      profession: "Painter",
-      service_categories: [{ name: "Painting" }],
-      average_rating: 4.6,
-      review_count: 42,
-      location: {
-        address: "Luxor, EG",
-        coordinates: [25.6872, 32.6396]
-      },
-      business_description: "Interior and exterior painting services. Attention to detail and customer satisfaction guaranteed.",
-      profile_image: "https://randomuser.me/api/portraits/women/4.jpg"
-    },
-    {
-      id: 5,
-      business_name: "David Wilson",
-      profession: "Landscaper",
-      service_categories: [{ name: "Landscaping" }],
-      average_rating: 4.5,
-      review_count: 35,
-      location: {
-        address: "Aswan, EG",
-        coordinates: [24.0889, 32.8998]
-      },
-      business_description: "Professional landscaping, garden design, and lawn maintenance services for residential and commercial properties.",
-      profile_image: "https://randomuser.me/api/portraits/men/5.jpg"
-    },
-  ];
-
-  const displayPros = pros.length > 0 ? pros : samplePros;
+  const displayPros = pros;
 
   // Helper function to extract location address from different data structures
   const getLocationAddress = (pro) => {
@@ -260,18 +189,30 @@ const ProsList = ({ pros = [] }) => {
                   </p>
                   
                   <div className="mt-4 flex flex-wrap gap-3">
-                    <Link 
-                      to={`/pros/${pro.id}`} 
+                    <button 
+                      onClick={() => {
+                        if (isAuthenticated) {
+                          navigate(`/pros/${pro.id}`);
+                        } else {
+                          navigate(`/login?redirect=/pros/${pro.id}`);
+                        }
+                      }} 
                       className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300"
                     >
                       {language === 'ar' ? 'عرض الملف الشخصي' : 'View Profile'}
-                    </Link>
-                    <Link 
-                      to={`/booking/${pro.id}`} 
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (isAuthenticated) {
+                          navigate(`/booking/${pro.id}`);
+                        } else {
+                          navigate(`/login?redirect=/booking/${pro.id}`);
+                        }
+                      }} 
                       className="px-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition duration-300"
                     >
                       {language === 'ar' ? 'احجز الآن' : 'Book Now'}
-                    </Link>
+                    </button>
                     <a 
                       href={`tel:+123456789`} 
                       className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition duration-300 flex items-center"
@@ -329,18 +270,30 @@ const ProsList = ({ pros = [] }) => {
                 </p>
                 
                 <div className="mt-4 flex space-x-2">
-                  <Link 
-                    to={`/pros/${pro.id}`} 
+                  <button 
+                    onClick={() => {
+                      if (isAuthenticated) {
+                        navigate(`/pros/${pro.id}`);
+                      } else {
+                        navigate(`/login?redirect=/pros/${pro.id}`);
+                      }
+                    }} 
                     className="flex-1 px-3 py-1.5 text-center text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300"
                   >
                     {language === 'ar' ? 'عرض الملف' : 'View Profile'}
-                  </Link>
-                  <Link 
-                    to={`/booking/${pro.id}`} 
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (isAuthenticated) {
+                        navigate(`/booking/${pro.id}`);
+                      } else {
+                        navigate(`/login?redirect=/booking/${pro.id}`);
+                      }
+                    }} 
                     className="flex-1 px-3 py-1.5 text-center text-sm border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition duration-300"
                   >
                     {language === 'ar' ? 'احجز الآن' : 'Book Now'}
-                  </Link>
+                  </button>
                 </div>
               </div>
             </motion.div>

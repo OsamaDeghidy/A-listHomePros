@@ -3,7 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 
-const LoginPage = () => {
+// تعريف المكون باستخدام صيغة function بدلاً من arrow function
+function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
@@ -70,10 +71,13 @@ const LoginPage = () => {
         navigate('/admin/dashboard');
       } else if (userRole === 'professional') {
         navigate('/pro-dashboard');
+      } else if (userRole === 'homeowner') {
+        navigate('/dashboard');
       } else {
-        // Default to the 'from' path or homepage for homeowners
+        // If role is not recognized, go to the requested page or homepage
         navigate(from);
       }
+      console.log(`User logged in as: ${userRole}, redirecting to appropriate dashboard`);
     }
   }, [authState, userRole, navigate, from]);
   
@@ -208,4 +212,5 @@ const LoginPage = () => {
   );
 };
 
-export default LoginPage; 
+// تصدير المكون
+export default LoginPage;

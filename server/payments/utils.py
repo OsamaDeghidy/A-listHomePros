@@ -222,3 +222,85 @@ def get_stripe_dashboard_link(stripe_account_id):
     except Exception as e:
         logger.error(f"Error creating dashboard link: {str(e)}")
         raise
+
+def create_payment_session(client, alistpro, amount, appointment_id, success_url, cancel_url):
+    """
+    Create a Stripe Checkout Session for a booking appointment payment
+    
+    Args:
+        client: The client user making the payment
+        alistpro: The A-List Home Pro profile receiving the payment
+        amount: The payment amount in dollars
+        appointment_id: The ID of the appointment being paid for
+        success_url: URL to redirect to after successful payment
+        cancel_url: URL to redirect to if payment is cancelled
+        
+    Returns:
+        The created checkout session
+    """
+    try:
+        # Get the A-List Home Pro's Stripe account
+        try:
+            stripe_account = AListHomeProStripeAccount.objects.get(user=alistpro.user)
+        except AListHomeProStripeAccount.DoesNotExist:
+            logger.error(f"A-List Home Pro {alistpro.user.email} does not have a Stripe account")
+            raise ValueError("A-List Home Pro does not have a Stripe account")
+        
+        # Check if the account is ready to accept payments
+        if not stripe_account.is_charges_enabled:
+            logger.error(f"A-List Home Pro {alistpro.user.email} cannot accept payments yet")
+            raise ValueError("A-List Home Pro cannot accept payments yet")
+        
+        # Convert amount to cents
+        amount_cents = int(amount * 100)
+        
+        # Calculate application fee (platform fee)
+        application_fee = int(amount_cents * settings.PLATFORM_FEE_PERCENTAGE)
+        
+        # Create the checkout session
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': f'Booking with {alistpro.user.get_full_name()}',
+                        'description': f'Appointment #{appointment_id}',
+                    },
+                    'unit_amount': amount_cents,
+                },
+                'quantity': 1,
+            }],
+            payment_intent_data={
+                'application_fee_amount': application_fee,
+                'transfer_data': {
+                    'destination': stripe_account.stripe_account_id,
+                },
+                'metadata': {
+                    'client_id': str(client.id),
+                    'client_email': client.email,
+                    'alistpro_id': str(alistpro.id),
+                    'alistpro_email': alistpro.user.email,
+                    'appointment_id': str(appointment_id),
+                    'payment_type': 'booking',
+                }
+            },
+            mode='payment',
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                'client_id': str(client.id),
+                'alistpro_id': str(alistpro.id),
+                'appointment_id': str(appointment_id),
+                'payment_type': 'booking',
+            }
+        )
+        
+        return session
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error creating checkout session: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error creating checkout session: {str(e)}")
+        raise
