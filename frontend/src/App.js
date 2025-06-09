@@ -3,10 +3,15 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet';
 
+// Providers
+import { LanguageProvider } from './hooks/useLanguage';
+import { DarkModeProvider } from './hooks/useDarkMode';
+
 // Layout
 import MainLayout from './components/layout/MainLayout';
 import DashboardLayout from './components/layout/DashboardLayout';
 import Layout from './components/layout/Layout';
+import LayoutProvider from './components/layout/LayoutProvider';
 
 // Components
 import ToastContainer from './components/notifications/ToastContainer';
@@ -23,13 +28,22 @@ import VerifyEmailPage from './pages/VerifyEmailPage';
 import SearchPage from './pages/SearchPage';
 import ProProfilePage from './pages/ProProfilePage';
 import ServiceDetailPage from './pages/ServiceDetailPage';
+import ServiceRequestPage from './pages/ServiceRequestPage';
 import BookingPage from './pages/BookingPage';
 import BookingConfirmationPage from './pages/BookingConfirmationPage';
 import AppointmentsPage from './pages/AppointmentsPage';
 import AppointmentDetailsPage from './pages/AppointmentDetailsPage';
 import ClientDashboardPage from './pages/ClientDashboardPage';
 import ProDashboardPage from './pages/ProDashboardPage';
+import SpecialistDashboardPage from './pages/SpecialistDashboardPage';
+import CrewDashboardPage from './pages/CrewDashboardPage';
+import ProClientsPage from './pages/ProClientsPage';
+import ProServicesPage from './pages/ProServicesPage';
+import ProAvailabilityPage from './pages/ProAvailabilityPage';
+import ProReviewsPage from './pages/ProReviewsPage';
+import ProNotificationsPage from './pages/ProNotificationsPage';
 import ProfileEditPage from './pages/ProfileEditPage';
+import ProProfileEditPage from './pages/ProProfileEditPage';
 import MessagesPage from './pages/MessagesPage';
 import ReviewsPage from './pages/ReviewsPage';
 import NotificationsPage from './pages/NotificationsPage';
@@ -51,6 +65,7 @@ import ServiceCategoriesPage from './pages/ServiceCategoriesPage';
 import ProOnboardingPage from './pages/ProOnboardingPage';
 import NotFoundPage from './pages/NotFoundPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
+import EscrowFundingPage from './pages/EscrowFundingPage';
 
 // Auth & Protected Routes
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -71,7 +86,10 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <DarkModeProvider>
+        <LanguageProvider>
       <Router>
+            <LayoutProvider>
         <Helmet>
           <meta charSet="utf-8" />
           <title>A-List Home Pros</title>
@@ -120,16 +138,16 @@ function App() {
                 <BookingConfirmationPage />
               </ProtectedRoute>
             } />
-            <Route path="appointments" element={
-              <ProtectedRoute>
-                <AppointmentsPage />
-              </ProtectedRoute>
-            } />
-            <Route path="appointments/:id" element={
-              <ProtectedRoute>
-                <AppointmentDetailsPage />
-              </ProtectedRoute>
-            } />
+                  <Route path="appointments" element={
+                    <ProtectedRoute>
+                      <AppointmentsPage />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="appointments/:id" element={
+                    <ProtectedRoute>
+                      <AppointmentDetailsPage />
+                    </ProtectedRoute>
+                  } />
             <Route path="payment/:bookingId" element={
               <ProtectedRoute>
                 <PaymentPage />
@@ -146,12 +164,13 @@ function App() {
           <Route path="dashboard" element={<DashboardRedirector />} />
           
           {/* Dashboard Routes */}
-          <Route path="/dashboard" element={
+                <Route path="dashboard/*" element={
             <ProtectedRoute>
               <DashboardLayout />
             </ProtectedRoute>
           }>
             <Route index element={<ClientDashboardPage />} />
+            <Route path="new-request" element={<ServiceRequestPage />} />
             <Route path="profile" element={<ProfileEditPage />} />
             <Route path="messages" element={<MessagesPage />} />
             <Route path="messages/:conversationId" element={<MessagesPage />} />
@@ -162,29 +181,76 @@ function App() {
             <Route path="calendar" element={<BookingCalendarPage />} />
             <Route path="payment-history" element={<PaymentHistoryPage />} />
             <Route path="payment/:bookingId" element={<PaymentPage />} />
+            <Route path="escrow" element={<EscrowFundingPage />} />
           </Route>
 
           {/* Pro Dashboard Routes */}
-          <Route path="/pro-dashboard" element={
+                <Route path="pro-dashboard/*" element={
             <ProtectedRoute requiresPro={true}>
               <DashboardLayout isPro={true} />
             </ProtectedRoute>
           }>
             <Route index element={<ProDashboardPage />} />
-            <Route path="profile" element={<ProfileEditPage isPro={true} />} />
+            <Route path="profile" element={<ProProfileEditPage />} />
             <Route path="messages" element={<MessagesPage isPro={true} />} />
             <Route path="messages/:conversationId" element={<MessagesPage isPro={true} />} />
-            <Route path="reviews" element={<ReviewsPage isPro={true} />} />
-            <Route path="notifications" element={<NotificationsPage isPro={true} />} />
+            <Route path="reviews" element={<ProReviewsPage />} />
+            <Route path="notifications" element={<ProNotificationsPage />} />
             <Route path="settings" element={<SettingsPage isPro={true} />} />
             <Route path="calendar" element={<BookingCalendarPage isPro={true} />} />
             <Route path="payment-history" element={<PaymentHistoryPage isPro={true} />} />
+            <Route path="clients" element={<ProClientsPage />} />
+            <Route path="services" element={<ProServicesPage />} />
+            <Route path="availability" element={<ProAvailabilityPage />} />
+          </Route>
+          
+          {/* Specialist Dashboard Routes */}
+          <Route path="specialist-dashboard/*" element={
+            <ProtectedRoute requiresPro={true}>
+              <DashboardLayout isPro={true} />
+            </ProtectedRoute>
+          }>
+            <Route index element={<SpecialistDashboardPage />} />
+            <Route path="profile" element={<ProfileEditPage />} />
+            <Route path="messages" element={<MessagesPage isPro={true} />} />
+            <Route path="messages/:conversationId" element={<MessagesPage isPro={true} />} />
+            <Route path="reviews" element={<ProReviewsPage />} />
+            <Route path="notifications" element={<ProNotificationsPage />} />
+            <Route path="settings" element={<SettingsPage isPro={true} />} />
+            <Route path="calendar" element={<BookingCalendarPage isPro={true} />} />
+            <Route path="payment-history" element={<PaymentHistoryPage isPro={true} />} />
+            <Route path="clients" element={<ProClientsPage />} />
+            <Route path="services" element={<ProServicesPage />} />
+            <Route path="availability" element={<ProAvailabilityPage />} />
+          </Route>
+          
+          {/* Crew Dashboard Routes */}
+          <Route path="crew-dashboard/*" element={
+            <ProtectedRoute requiresPro={true}>
+              <DashboardLayout isPro={true} />
+            </ProtectedRoute>
+          }>
+            <Route index element={<CrewDashboardPage />} />
+            <Route path="profile" element={<ProfileEditPage />} />
+            <Route path="messages" element={<MessagesPage isPro={true} />} />
+            <Route path="messages/:conversationId" element={<MessagesPage isPro={true} />} />
+            <Route path="reviews" element={<ProReviewsPage />} />
+            <Route path="notifications" element={<ProNotificationsPage />} />
+            <Route path="settings" element={<SettingsPage isPro={true} />} />
+            <Route path="calendar" element={<BookingCalendarPage isPro={true} />} />
+            <Route path="payment-history" element={<PaymentHistoryPage isPro={true} />} />
+            <Route path="clients" element={<ProClientsPage />} />
+            <Route path="services" element={<ProServicesPage />} />
+            <Route path="availability" element={<ProAvailabilityPage />} />
           </Route>
           
           {/* 404 - Page Not Found */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+            </LayoutProvider>
       </Router>
+        </LanguageProvider>
+      </DarkModeProvider>
     </QueryClientProvider>
   );
 }

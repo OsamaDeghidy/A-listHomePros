@@ -26,7 +26,7 @@ const ReviewsPage = () => {
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [selectedReview, setSelectedReview] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
+  
   // Redirect if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
@@ -51,7 +51,7 @@ const ReviewsPage = () => {
     setIsLoading(true);
     setError(null);
 
-    try {
+      try {
       // For now, we'll try to get all reviews and filter by user
       // In a real implementation, we'd want a dedicated endpoint like /reviews/my-reviews/
       let allReviews = [];
@@ -107,7 +107,7 @@ const ReviewsPage = () => {
 
   const filterReviews = () => {
     let filtered = [...reviews];
-
+  
     // Filter by rating
     if (activeFilters.rating !== 'all') {
       const rating = parseInt(activeFilters.rating);
@@ -168,7 +168,7 @@ const ReviewsPage = () => {
       setIsDeleting(false);
     }
   };
-
+  
   // Generate rating stars
   const renderStars = (rating, size = 'text-base') => {
     const stars = [];
@@ -289,7 +289,7 @@ const ReviewsPage = () => {
       </div>
     </motion.div>
   );
-
+  
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
@@ -456,7 +456,7 @@ const ReviewsPage = () => {
             </div>
           </motion.div>
         )}
-
+            
         {/* Reviews List */}
         <div>
           {filteredReviews.length === 0 ? (
@@ -496,7 +496,7 @@ const ReviewsPage = () => {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="bg-white rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto"
-          >
+                      >
             <div className="flex justify-between items-start mb-4">
               <h3 className="text-lg font-semibold">
                 {isArabic ? 'تفاصيل التقييم' : 'Review Details'}
@@ -550,7 +550,7 @@ const ReviewsPage = () => {
                   </label>
                   <p className="text-gray-900 mt-1">{selectedReview.title}</p>
                           </div>
-              )}
+                          )}
 
               <div>
                 <label className="text-sm font-medium text-gray-700">

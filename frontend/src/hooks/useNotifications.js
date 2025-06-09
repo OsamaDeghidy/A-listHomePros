@@ -1,227 +1,293 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { notificationService } from '../services/api';
 import { useAuth } from './useAuth';
-import notificationService from '../services/notificationService';
 
 /**
  * هوك مخصص لإدارة الإشعارات
  * يوفر وظائف لجلب الإشعارات وتحديدها كمقروءة وحذفها
  */
 const useNotifications = () => {
+  const { currentUser, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const { user, token } = useAuth();
-  // إضافة تبديل للوضع التجريبي (سيتم استخدام البيانات الوهمية إذا كان true)
-  const isDemoMode = !token || process.env.REACT_APP_USE_DEMO_DATA === 'true';
+  const [lastFetchTime, setLastFetchTime] = useState(null);
+  
+  // Real-time polling interval
+  const pollingInterval = useRef(null);
+  const POLLING_INTERVAL_MS = 30000; // 30 seconds
 
-  // الحصول على الإشعارات من الخادم
-  const fetchNotifications = useCallback(async () => {
-    if (!token && !isDemoMode) return;
-
-    setLoading(true);
+  // Fetch notifications
+  const fetchNotifications = useCallback(async (silent = false) => {
+    if (!isAuthenticated) return;
+    
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
-      let fetchedNotifications = [];
+      const response = await notificationService.getNotifications();
+      const data = response.data;
       
-      if (isDemoMode) {
-        // استخدام البيانات الوهمية في وضع العرض التوضيحي
-        // تأخير اصطناعي لمحاكاة الاتصال بالشبكة
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // بيانات الإشعارات الوهمية
-        fetchedNotifications = [
-          {
-            id: '1',
-            type: 'message',
-            title: 'رسالة جديدة',
-            message: 'لديك رسالة جديدة من محمد أحمد',
-            read: false,
-            createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // قبل 5 دقائق
-            link: '/messages'
-          },
-          {
-            id: '2',
-            type: 'appointment',
-            title: 'تذكير بالموعد',
-            message: 'لديك موعد مع فني الكهرباء غدًا في الساعة 10 صباحًا',
-            read: false,
-            createdAt: new Date(Date.now() - 1000 * 60 * 60).toISOString(), // قبل ساعة
-            link: '/appointments'
-          },
-          {
-            id: '3',
-            type: 'payment',
-            title: 'تم تأكيد الدفع',
-            message: 'تم تأكيد دفعتك البالغة $150 لخدمات السباكة',
-            read: true,
-            createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), // قبل يوم
-            link: '/payments'
-          },
-          {
-            id: '4',
-            type: 'system',
-            title: 'تحديث النظام',
-            message: 'تم تحديث حسابك بميزات جديدة متاحة الآن',
-            read: true,
-            createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), // قبل يومين
-            link: '/account'
-          },
-          {
-            id: '5',
-            type: 'service',
-            title: 'تقييم الخدمة',
-            message: 'الرجاء تقييم تجربتك الأخيرة مع فني التكييف',
-            read: false,
-            createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(), // قبل 3 ساعات
-            link: '/reviews'
-          }
-        ];
-      } else {
-        // في وضع الإنتاج، نستخدم API حقيقية
-        const response = await notificationService.getNotifications(token);
-        fetchedNotifications = response.data;
+      if (data.results) {
+        setNotifications(data.results);
+        setUnreadCount(data.unread_count || data.results.filter(n => !n.read && !n.is_read).length);
+      } else if (Array.isArray(data)) {
+        setNotifications(data);
+        setUnreadCount(data.filter(n => !n.read && !n.is_read).length);
       }
-
-      setNotifications(fetchedNotifications);
       
-      // حساب عدد الإشعارات غير المقروءة
-      const unread = fetchedNotifications.filter(notif => !notif.read).length;
-      setUnreadCount(unread);
+      setLastFetchTime(new Date());
     } catch (err) {
-      console.error('Error fetching notifications:', err);
-      setError('حدث خطأ أثناء جلب الإشعارات. الرجاء المحاولة مرة أخرى.');
-    } finally {
-      setLoading(false);
-    }
-  }, [token, user, isDemoMode]);
-
-  // تحديث إشعار كمقروء
-  const markAsRead = useCallback(async (notificationId) => {
-    if (!token && !isDemoMode) return;
-
-    try {
-      if (!isDemoMode) {
-        // في وضع الإنتاج، نستخدم API حقيقية
-        await notificationService.markAsRead(token, notificationId);
+      console.error('Failed to fetch notifications:', err);
+      if (!silent) {
+        setError('Failed to load notifications');
       }
+      
+      // Fallback to mock data in development
+      if (process.env.NODE_ENV === 'development') {
+        const mockNotifications = generateMockNotifications();
+        setNotifications(mockNotifications);
+        setUnreadCount(mockNotifications.filter(n => !n.read && !n.is_read).length);
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [isAuthenticated]);
 
-      // تحديث حالة الإشعار في واجهة المستخدم
+  // Mark notification as read
+  const markAsRead = useCallback(async (notificationId) => {
+    try {
+      await notificationService.markAsRead(notificationId);
+      
+      // Update local state
       setNotifications(prev => 
-        prev.map(notif => 
-          notif.id === notificationId 
-            ? { ...notif, read: true } 
-            : notif
+        prev.map(notification => 
+          notification.id === notificationId 
+            ? { ...notification, read: true, is_read: true, read_at: new Date().toISOString() }
+            : notification
         )
       );
-
-      // تحديث عدد الإشعارات غير المقروءة
+      
+      // Update unread count
       setUnreadCount(prev => Math.max(0, prev - 1));
+      
+      return true;
     } catch (err) {
-      console.error('Error marking notification as read:', err);
-      setError('حدث خطأ أثناء تحديث الإشعار. الرجاء المحاولة مرة أخرى.');
+      console.error('Failed to mark notification as read:', err);
+      return false;
     }
-  }, [token, isDemoMode]);
+  }, []);
 
-  // تحديد جميع الإشعارات كمقروءة
+  // Mark all as read
   const markAllAsRead = useCallback(async () => {
-    if (!token && !isDemoMode) return;
-
     try {
-      if (!isDemoMode) {
-        // في وضع الإنتاج، نستخدم API حقيقية
-        await notificationService.markAllAsRead(token);
-      }
-
-      // تحديث جميع الإشعارات كمقروءة في واجهة المستخدم
+      await notificationService.markAllAsRead();
+      
+      // Update local state
       setNotifications(prev => 
-        prev.map(notif => ({ ...notif, read: true }))
+        prev.map(notification => ({ 
+          ...notification, 
+          read: true, 
+          is_read: true, 
+          read_at: new Date().toISOString() 
+        }))
       );
-
-      // تصفير عدد الإشعارات غير المقروءة
+      
       setUnreadCount(0);
+      return true;
     } catch (err) {
-      console.error('Error marking all notifications as read:', err);
-      setError('حدث خطأ أثناء تحديث الإشعارات. الرجاء المحاولة مرة أخرى.');
+      console.error('Failed to mark all notifications as read:', err);
+      return false;
     }
-  }, [token, isDemoMode]);
+  }, []);
 
-  // حذف إشعار
+  // Delete notification
   const deleteNotification = useCallback(async (notificationId) => {
-    if (!token && !isDemoMode) return;
-
     try {
-      if (!isDemoMode) {
-        // في وضع الإنتاج، نستخدم API حقيقية
-        await notificationService.deleteNotification(token, notificationId);
-      }
-
-      // التحقق مما إذا كان الإشعار غير مقروء قبل حذفه
-      const notificationToDelete = notifications.find(n => n.id === notificationId);
-      const wasUnread = notificationToDelete && !notificationToDelete.read;
-
-      // حذف الإشعار من واجهة المستخدم
-      setNotifications(prev => prev.filter(notif => notif.id !== notificationId));
-
-      // تحديث عدد الإشعارات غير المقروءة إذا تم حذف إشعار غير مقروء
-      if (wasUnread) {
+      await notificationService.deleteNotification(notificationId);
+      
+      // Update local state
+      const deletedNotification = notifications.find(n => n.id === notificationId);
+      setNotifications(prev => prev.filter(n => n.id !== notificationId));
+      
+      // Update unread count if deleted notification was unread
+      if (deletedNotification && !deletedNotification.read && !deletedNotification.is_read) {
         setUnreadCount(prev => Math.max(0, prev - 1));
       }
+      
+      return true;
     } catch (err) {
-      console.error('Error deleting notification:', err);
-      setError('حدث خطأ أثناء حذف الإشعار. الرجاء المحاولة مرة أخرى.');
+      console.error('Failed to delete notification:', err);
+      return false;
     }
-  }, [token, isDemoMode, notifications]);
+  }, [notifications]);
 
-  // جلب الإشعارات غير المقروءة فقط
-  const fetchUnreadNotifications = useCallback(async () => {
-    if (!token && !isDemoMode) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      if (isDemoMode) {
-        // في وضع العرض التوضيحي، نستخدم البيانات الوهمية ونصفيها
-        const response = await fetchNotifications();
-        return notifications.filter(n => !n.read);
-      } else {
-        // في وضع الإنتاج، نستخدم API حقيقية
-        const response = await notificationService.getUnreadNotifications(token);
-        return response.data;
-      }
-    } catch (err) {
-      console.error('Error fetching unread notifications:', err);
-      setError('حدث خطأ أثناء جلب الإشعارات غير المقروءة. الرجاء المحاولة مرة أخرى.');
-      return [];
-    } finally {
-      setLoading(false);
+  // Add new notification (for real-time updates)
+  const addNotification = useCallback((notification) => {
+    setNotifications(prev => [notification, ...prev]);
+    
+    if (!notification.read && !notification.is_read) {
+      setUnreadCount(prev => prev + 1);
     }
-  }, [token, isDemoMode, fetchNotifications, notifications]);
+  }, []);
 
-  // جلب الإشعارات عند تحميل المكون أو تغيير المستخدم أو الرمز
+  // Get notifications by type
+  const getNotificationsByType = useCallback((type) => {
+    return notifications.filter(n => n.type === type || n.notification_type === type);
+  }, [notifications]);
+
+  // Get unread notifications
+  const getUnreadNotifications = useCallback(() => {
+    return notifications.filter(n => !n.read && !n.is_read);
+  }, [notifications]);
+
+  // Get recent notifications (last 24 hours)
+  const getRecentNotifications = useCallback(() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    return notifications.filter(n => {
+      const notificationDate = new Date(n.created_at || n.timestamp);
+      return notificationDate >= yesterday;
+    });
+  }, [notifications]);
+
+  // Start real-time polling
+  const startPolling = useCallback(() => {
+    if (!isAuthenticated) return;
+    
+    stopPolling(); // Clear any existing interval
+    
+    pollingInterval.current = setInterval(() => {
+      fetchNotifications(true); // Silent fetch
+    }, POLLING_INTERVAL_MS);
+  }, [isAuthenticated, fetchNotifications]);
+
+  // Stop real-time polling
+  const stopPolling = useCallback(() => {
+    if (pollingInterval.current) {
+      clearInterval(pollingInterval.current);
+      pollingInterval.current = null;
+    }
+  }, []);
+
+  // Initialize and setup polling
   useEffect(() => {
-    fetchNotifications();
-    
-    // إعداد تحديث دوري للإشعارات كل دقيقة
-    const intervalId = setInterval(fetchNotifications, 60000);
-    
-    // تنظيف الفاصل الزمني عند فك تحميل المكون
-    return () => clearInterval(intervalId);
-  }, [fetchNotifications]);
+    if (isAuthenticated && currentUser) {
+      fetchNotifications();
+      startPolling();
+    } else {
+      setNotifications([]);
+      setUnreadCount(0);
+      stopPolling();
+    }
+
+    return () => {
+      stopPolling();
+    };
+  }, [isAuthenticated, currentUser, fetchNotifications, startPolling, stopPolling]);
+
+  // Handle page visibility change to refresh notifications
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isAuthenticated) {
+        // Page became visible, fetch latest notifications
+        fetchNotifications(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, fetchNotifications]);
+
+  // Generate mock notifications for development
+  const generateMockNotifications = () => {
+    const now = new Date();
+    return [
+      {
+        id: 1,
+        type: 'appointment',
+        notification_type: 'APPOINTMENT',
+        title: 'New Appointment Booked',
+        message: 'You have a new plumbing appointment scheduled for tomorrow at 2:00 PM',
+        created_at: new Date(now - 1000 * 60 * 30).toISOString(), // 30 minutes ago
+        read: false,
+        is_read: false,
+        priority: 'high'
+      },
+      {
+        id: 2,
+        type: 'payment',
+        notification_type: 'PAYMENT',
+        title: 'Payment Received',
+        message: 'You received a payment of $150.00 for electrical work',
+        created_at: new Date(now - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
+        read: false,
+        is_read: false,
+        priority: 'medium'
+      },
+      {
+        id: 3,
+        type: 'message',
+        notification_type: 'MESSAGE',
+        title: 'New Message',
+        message: 'You have a new message from Sarah Ahmed',
+        created_at: new Date(now - 1000 * 60 * 60 * 4).toISOString(), // 4 hours ago
+        read: true,
+        is_read: true,
+        priority: 'normal'
+      },
+      {
+        id: 4,
+        type: 'review',
+        notification_type: 'REVIEW',
+        title: 'New Review Received',
+        message: 'Ahmed Mohamed left you a 5-star review!',
+        created_at: new Date(now - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
+        read: true,
+        is_read: true,
+        priority: 'normal'
+      },
+      {
+        id: 5,
+        type: 'system',
+        notification_type: 'SYSTEM',
+        title: 'Profile Updated',
+        message: 'Your professional profile has been successfully updated',
+        created_at: new Date(now - 1000 * 60 * 60 * 24 * 2).toISOString(), // 2 days ago
+        read: true,
+        is_read: true,
+        priority: 'low'
+      }
+    ];
+  };
 
   return {
+    // State
     notifications,
     unreadCount,
     loading,
     error,
+    lastFetchTime,
+    
+    // Actions
     fetchNotifications,
-    fetchUnreadNotifications,
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    isDemoMode
+    addNotification,
+    
+    // Utilities
+    getNotificationsByType,
+    getUnreadNotifications,
+    getRecentNotifications,
+    
+    // Real-time controls
+    startPolling,
+    stopPolling
   };
 };
 

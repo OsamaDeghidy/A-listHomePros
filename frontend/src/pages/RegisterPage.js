@@ -102,7 +102,7 @@ const RegisterPage = () => {
       }
       
       // If the user is a professional, go to step 2
-      if (formData.role === 'contractor') {
+      if (formData.role === 'contractor' || formData.role === 'specialist' || formData.role === 'crew') {
         setFormStep(2);
         return false;
       }
@@ -223,7 +223,7 @@ const RegisterPage = () => {
             )}
             
             {/* Step indicator */}
-            {formData.role === 'contractor' && (
+            {(formData.role === 'contractor' || formData.role === 'specialist' || formData.role === 'crew') && (
               <motion.div 
                 className="flex justify-center mb-4"
                 variants={itemVariants}
@@ -322,46 +322,139 @@ const RegisterPage = () => {
                 </motion.div>
     
                 <motion.div className="mt-6" variants={itemVariants}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
                     {language === 'ar' ? 'نوع الحساب' : 'Account Type'}
                   </label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Client Role */}
                     <div>
                       <label className={`
-                        flex w-full justify-center py-2 px-4 border rounded-md shadow-sm text-sm font-medium 
-                        transition-colors duration-200
+                        flex w-full justify-between items-center py-3 px-4 border rounded-lg shadow-sm text-sm
+                        transition-all duration-200 cursor-pointer
                         ${formData.role === 'client' 
-                          ? 'bg-blue-600 text-white border-blue-600' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}
+                          ? 'bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-blue-500' 
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400'}
                       `}>
-                        <input
-                          type="radio"
-                          name="role"
-                          value="client"
-                          checked={formData.role === 'client'}
-                          onChange={handleChange}
-                          className="sr-only"
-                        />
-                        {language === 'ar' ? 'أحتاج خدمة' : 'I Need a Service'}
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            name="role"
+                            value="client"
+                            checked={formData.role === 'client'}
+                            onChange={handleChange}
+                            className="sr-only"
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {language === 'ar' ? '🏠 عميل' : '🏠 Client'}
+                            </span>
+                            <span className="text-xs text-gray-500 mt-1">
+                              {language === 'ar' ? 'أحتاج لخدمات منزلية' : 'I need home services'}
+                            </span>
+                          </div>
+                        </div>
+                        {formData.role === 'client' && (
+                          <div className="text-blue-500">✓</div>
+                        )}
                       </label>
                     </div>
+
+                    {/* A-List Specialist Role */}
                     <div>
                       <label className={`
-                        flex w-full justify-center py-2 px-4 border rounded-md shadow-sm text-sm font-medium
-                        transition-colors duration-200
-                        ${formData.role === 'contractor' 
-                          ? 'bg-blue-600 text-white border-blue-600' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}
+                        flex w-full justify-between items-center py-3 px-4 border rounded-lg shadow-sm text-sm
+                        transition-all duration-200 cursor-pointer
+                        ${formData.role === 'specialist' 
+                          ? 'bg-purple-50 text-purple-700 border-purple-300 ring-2 ring-purple-500' 
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400'}
                       `}>
-                        <input
-                          type="radio"
-                          name="role"
-                          value="contractor"
-                          checked={formData.role === 'contractor'}
-                          onChange={handleChange}
-                          className="sr-only"
-                        />
-                        {language === 'ar' ? 'أقدم خدمات' : 'I Provide Services'}
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            name="role"
+                            value="specialist"
+                            checked={formData.role === 'specialist'}
+                            onChange={handleChange}
+                            className="sr-only"
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {language === 'ar' ? '⭐ أخصائي A-List' : '⭐ A-List Specialist'}
+                            </span>
+                            <span className="text-xs text-gray-500 mt-1">
+                              {language === 'ar' ? 'خبير استشاري معتمد' : 'Certified expert consultant'}
+                            </span>
+                          </div>
+                        </div>
+                        {formData.role === 'specialist' && (
+                          <div className="text-purple-500">✓</div>
+                        )}
+                      </label>
+                    </div>
+
+                    {/* A-List Crew Role */}
+                    <div>
+                      <label className={`
+                        flex w-full justify-between items-center py-3 px-4 border rounded-lg shadow-sm text-sm
+                        transition-all duration-200 cursor-pointer
+                        ${formData.role === 'crew' 
+                          ? 'bg-green-50 text-green-700 border-green-300 ring-2 ring-green-500' 
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400'}
+                      `}>
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            name="role"
+                            value="crew"
+                            checked={formData.role === 'crew'}
+                            onChange={handleChange}
+                            className="sr-only"
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {language === 'ar' ? '👥 طاقم A-List' : '👥 A-List Crew'}
+                            </span>
+                            <span className="text-xs text-gray-500 mt-1">
+                              {language === 'ar' ? 'عضو فريق عمل متخصص' : 'Specialized team member'}
+                            </span>
+                          </div>
+                        </div>
+                        {formData.role === 'crew' && (
+                          <div className="text-green-500">✓</div>
+                        )}
+                      </label>
+                    </div>
+
+                    {/* Home Pro Role */}
+                    <div>
+                      <label className={`
+                        flex w-full justify-between items-center py-3 px-4 border rounded-lg shadow-sm text-sm
+                        transition-all duration-200 cursor-pointer
+                        ${formData.role === 'contractor' 
+                          ? 'bg-orange-50 text-orange-700 border-orange-300 ring-2 ring-orange-500' 
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400'}
+                      `}>
+                        <div className="flex items-center">
+                          <input
+                            type="radio"
+                            name="role"
+                            value="contractor"
+                            checked={formData.role === 'contractor'}
+                            onChange={handleChange}
+                            className="sr-only"
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {language === 'ar' ? '🔧 محترف منزلي' : '🔧 Home Pro'}
+                            </span>
+                            <span className="text-xs text-gray-500 mt-1">
+                              {language === 'ar' ? 'مقاول معتمد ومرخص' : 'Licensed contractor'}
+                            </span>
+                          </div>
+                        </div>
+                        {formData.role === 'contractor' && (
+                          <div className="text-orange-500">✓</div>
+                        )}
                       </label>
                     </div>
                   </div>

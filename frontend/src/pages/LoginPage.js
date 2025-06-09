@@ -9,11 +9,12 @@ function LoginPage() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [formError, setFormError] = useState('');
-  const { login, error, loading, authState, userRole } = useAuth();
+  
+  const { login, error, loading, authState, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Get redirect URL from location state or default based on role
+  // Get the intended destination or default to home
   const from = location.state?.from?.pathname || '/';
 
   // Animation variants
@@ -38,6 +39,18 @@ function LoginPage() {
     visible: { y: 0, opacity: 1 },
     exit: { y: -20, opacity: 0 }
   };
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      // If user is already logged in, redirect them
+      if (from !== '/') {
+        navigate(from);
+      } else {
+        navigate('/dashboard'); // This will trigger DashboardRedirector
+      }
+    }
+  }, [isAuthenticated, navigate, from]);
   
   // Handle form submission
   const handleSubmit = async (e) => {
@@ -55,31 +68,50 @@ function LoginPage() {
     }
     
     try {
-      await login(email, password);
-      // Redirect will happen in the useEffect below
+      console.log('🔐 LoginPage: Submitting login form...');
+      
+      // Login and get redirect info
+      const loginResult = await login(email, password);
+      
+      console.log('✅ LoginPage: Login successful, redirect info:', {
+        role: loginResult.role,
+        dashboardRoute: loginResult.dashboardRoute,
+        from: from
+      });
+      
+      // Determine where to redirect
+      let redirectTo;
+      
+      if (from && from !== '/') {
+        // If user was trying to access a specific page, redirect there
+        redirectTo = from;
+        console.log('📍 LoginPage: Redirecting to intended destination:', redirectTo);
+      } else {
+        // Otherwise, redirect to the appropriate dashboard
+        redirectTo = loginResult.dashboardRoute;
+        console.log('📍 LoginPage: Redirecting to dashboard:', redirectTo);
+      }
+      
+      // Perform redirect
+      navigate(redirectTo, { replace: true });
+      
     } catch (err) {
-      // Error is already handled in the login function
-      console.error('Login submission error:', err);
+      console.error('❌ LoginPage: Login submission error:', err);
+      // Error is already handled in the login function and displayed via the error state
     }
   };
 
-  // Handle redirection after successful login based on user role
-  useEffect(() => {
-    if (authState === 'success' && userRole) {
-      // Redirect based on user role
-      if (userRole === 'admin') {
-        navigate('/admin/dashboard');
-      } else if (userRole === 'professional') {
-        navigate('/pro-dashboard');
-      } else if (userRole === 'homeowner') {
-        navigate('/dashboard');
-      } else {
-        // If role is not recognized, go to the requested page or homepage
-        navigate(from);
-      }
-      console.log(`User logged in as: ${userRole}, redirecting to appropriate dashboard`);
-    }
-  }, [authState, userRole, navigate, from]);
+  // Show loading state during login
+  if (loading && authState === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-500 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600">Signing in...</p>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <motion.div 
@@ -143,6 +175,7 @@ function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-400 focus:border-blue-400 focus:z-10 sm:text-sm"
                 placeholder="Email address"
+                disabled={loading}
               />
             </motion.div>
             <motion.div variants={itemVariants}>
@@ -157,6 +190,7 @@ function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-400 focus:border-blue-400 focus:z-10 sm:text-sm"
                 placeholder="Password"
+                disabled={loading}
               />
             </motion.div>
           </div>
@@ -170,6 +204,7 @@ function LoginPage() {
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="h-4 w-4 text-blue-400 focus:ring-blue-400 border-gray-300 rounded"
+                disabled={loading}
               />
               <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
                 Remember me
@@ -188,29 +223,44 @@ function LoginPage() {
               type="submit"
               disabled={loading}
               className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
-                loading ? 'bg-blue-300' : 'bg-blue-400 hover:bg-blue-500'
-              } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200`}
+                loading ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-400 hover:bg-blue-500 focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+              } transition-colors duration-200`}
             >
               {loading ? (
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              ) : (
-                <span className="absolute left-0 inset-y-0 flex items-center pl-3">
-                  <svg className="h-5 w-5 text-blue-500 group-hover:text-blue-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                </span>
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                    <svg className="h-5 w-5 text-blue-500 group-hover:text-blue-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                      <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                    </svg>
+                  </span>
+                  Sign in
+                </>
               )}
-              {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </motion.div>
         </motion.form>
+
+        {/* Additional Help Text */}
+        <motion.div variants={itemVariants} className="text-center">
+          <p className="text-xs text-gray-500">
+            New to A-List Home Pros?{' '}
+            <Link to="/how-it-works" className="text-blue-400 hover:text-blue-500">
+              Learn how it works
+            </Link>
+          </p>
+        </motion.div>
       </div>
     </motion.div>
   );
-};
+}
 
 // تصدير المكون
 export default LoginPage;

@@ -19,7 +19,7 @@ from drf_yasg import openapi
 
 # Import viewsets
 from users.views import RegisterView, CustomTokenObtainPairView, UserProfileView
-from alistpros_profiles.views import AListHomeProProfileViewSet, ServiceCategoryListView
+from alistpros_profiles.views import AListHomeProProfileViewSet, ServiceCategoryListView, AListHomeProReviewViewSet
 from scheduling.views import AppointmentViewSet
 from messaging.views import ConversationViewSet, MessageViewSet, NotificationViewSet as MessagingNotificationViewSet
 from notifications.views import NotificationViewSet, NotificationSettingViewSet
@@ -30,6 +30,7 @@ router = routers.DefaultRouter()
 # Register routes
 # router.register(r'users', UserViewSet)  # UserViewSet is not defined in users.views
 router.register(r'alistpros/profiles', AListHomeProProfileViewSet)
+router.register(r'alistpros/reviews', AListHomeProReviewViewSet, basename='alistproreview')
 # ServiceCategoryListView is a ListAPIView, not a ModelViewSet, so it can't be registered with router
 # router.register(r'alistpros/categories', ServiceCategoryViewSet)
 # We don't have a ReviewViewSet, we have AListHomeProReviewCreateView which is a CreateAPIView
@@ -52,7 +53,7 @@ schema_view = get_schema_view(
     openapi.Info(
         title="A-List Home Pros API",
         default_version='v1',
-        description="API for A-List Home Pros - connecting homeowners with qualified contractors",
+        description="API for A-List Home Pros - connecting homeowners with qualified alist pros",
         terms_of_service="https://www.alistpros.com/terms/",
         contact=openapi.Contact(email="osamaeldeghadey@gmail.com"),
         license=openapi.License(name="Proprietary License"),

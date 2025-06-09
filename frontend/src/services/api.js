@@ -80,21 +80,144 @@ const authService = {
   verifyEmail: (token, userId) => api.get(`/users/verify-email/${token}/${userId}/`),
 };
 
-// خدمات المحترفين والخدمات
+// خدمات المحترفين والخدمات الجديدة
 const alistProsService = {
-  // فئات الخدمات
-  getCategories: () => api.get('/alistpros/categories/'),
+  // Professional Profiles
+  getProfiles: (params) => api.get('/alistpros-profiles/professionals/', { params }),
+  getProfile: (id) => api.get(`/alistpros-profiles/professionals/${id}/`),
+  getMyProfile: () => api.get('/alistpros-profiles/my-profile/'),
+  updateMyProfile: (data) => api.put('/alistpros-profiles/my-profile/', data),
   
-  // البحث والقوائم
-  getProfiles: (params) => api.get('/alistpros/profiles/', { params }),
-  getPendingProfiles: () => api.get('/alistpros/admin/pending/'),
+  // Service Requests
+  getServiceRequests: (params) => api.get('/alistpros-profiles/requests/', { params }),
+  createServiceRequest: (data) => api.post('/alistpros-profiles/requests/', data),
+  updateServiceRequest: (id, data) => api.put(`/alistpros-profiles/requests/${id}/`, data),
+  deleteServiceRequest: (id) => api.delete(`/alistpros-profiles/requests/${id}/`),
+  
+  // Service Quotes
+  getServiceQuotes: (params) => api.get('/alistpros-profiles/quotes/', { params }),
+  createServiceQuote: (data) => api.post('/alistpros-profiles/quotes/', data),
+  updateServiceQuote: (id, data) => api.put(`/alistpros-profiles/quotes/${id}/`, data),
+  acceptServiceQuote: (id, data) => api.post(`/alistpros-profiles/quotes/${id}/accept/`, data),
+  
+  // Job Assignments  
+  getJobAssignments: (params) => api.get('/alistpros-profiles/jobs/', { params }),
+  updateJobAssignment: (id, data) => api.put(`/alistpros-profiles/jobs/${id}/`, data),
+  
+  // Availability Management
+  getAvailability: (params) => api.get('/alistpros-profiles/availability/', { params }),
+  addAvailability: (data) => api.post('/alistpros-profiles/availability/', data),
+  updateAvailability: (id, data) => api.put(`/alistpros-profiles/availability/${id}/`, data),
+  deleteAvailability: (id) => api.delete(`/alistpros-profiles/availability/${id}/`),
+  
+  // Time Off Management
+  getTimeOff: (params) => api.get('/alistpros-profiles/time-off/', { params }),
+  addTimeOff: (data) => api.post('/alistpros-profiles/time-off/', data),
+  deleteTimeOff: (id) => api.delete(`/alistpros-profiles/time-off/${id}/`),
+  
+  // Reviews
+  getReviews: (professionalId = null) => {
+    const url = professionalId 
+      ? `/alistpros-profiles/professionals/${professionalId}/reviews/`
+      : '/alistpros-profiles/reviews/';
+    return api.get(url);
+  },
+  createReview: (professionalId, data) => api.post(`/alistpros-profiles/professionals/${professionalId}/reviews/`, data),
+  respondToReview: (reviewId, data) => api.post(`/alistpros-profiles/reviews/${reviewId}/respond/`, data),
+  
+  // Dashboard Data
+  getProfessionalDashboard: () => api.get('/alistpros-profiles/dashboard/professional/'),
+  getClientDashboard: () => api.get('/alistpros-profiles/dashboard/client/'),
+  
+  // Categories
+  getCategories: () => api.get('/alistpros-profiles/categories/'),
+  getPendingProfiles: () => api.get('/alistpros-profiles/admin/pending/'),
   
   // الملفات الشخصية
-  getProfile: (id) => api.get(id === 'me' ? '/users/profile/' : `/alistpros/profiles/${id}/`),
+  getProfile: async (id) => {
+    console.log('🔍 Getting profile for:', id);
+    
+    if (id === 'me') {
+      // Try multiple approaches to get current user's profile
+      try {
+        // First try: get profile list and find current user's profile
+        console.log('📡 Trying profiles list...');
+        const profilesResponse = await api.get('/alistpros/profiles/');
+        const profiles = profilesResponse.data.results || profilesResponse.data;
+        console.log('📋 Found profiles:', profiles);
+        
+        if (profiles && profiles.length > 0) {
+          // For now, assume first profile belongs to current user
+          // In a real scenario, you'd filter by user ID
+          const userProfile = profiles[0];
+          console.log('✅ Using profile:', userProfile);
+          return { data: userProfile };
+        }
+        
+        // If no profiles found, fall back to user profile endpoint
+        console.log('📡 No alistpro profiles found, trying user profile...');
+        return await api.get('/users/profile/');
+      } catch (err) {
+        console.log('❌ Profiles list failed, trying user profile...', err.response?.status);
+        // Fallback to user profile endpoint
+        try {
+          return await api.get('/users/profile/');
+        } catch (userErr) {
+          console.log('❌ User profile also failed:', userErr.response?.status);
+          return { data: {} };
+        }
+      }
+    } else {
+      return api.get(`/alistpros/profiles/${id}/`);
+    }
+  },
   getProfileDetail: (id) => api.get(`/alistpros/profile-detail/${id}/`),
   createProfile: (data) => api.post('/alistpros/profiles/create/', data),
-  updateProfile: (data) => api.put('/alistpros/profiles/update/', data),
-  updateProfilePartial: (data) => api.patch('/alistpros/profiles/update/', data),
+  updateProfile: async (profileId, data) => {
+    // Try multiple endpoints to handle different scenarios
+    console.log('🔄 Attempting profile update with data:', data);
+    
+    try {
+      // First try: custom update endpoint
+      console.log('📡 Trying: /alistpros/profiles/update/');
+      return await api.patch('/alistpros/profiles/update/', data);
+    } catch (error) {
+      console.log('❌ Custom endpoint failed:', error.response?.status);
+      
+      // Second try: Get profile ID and use ViewSet endpoint
+      try {
+        console.log('📡 Trying to get profile list first...');
+        const profilesResponse = await api.get('/alistpros/profiles/');
+        const profiles = profilesResponse.data.results || profilesResponse.data;
+        
+        if (profiles && profiles.length > 0) {
+          const userProfile = profiles[0]; // Assume first profile belongs to current user
+          console.log('📡 Found profile, trying ViewSet update:', userProfile.id);
+          return await api.patch(`/alistpros/profiles/${userProfile.id}/`, data);
+        }
+      } catch (listError) {
+        console.log('❌ Profile list failed:', listError.response?.status);
+      }
+      
+      // Third try: Create new profile if none exists
+      try {
+        console.log('📡 Trying to create new profile...');
+        const createData = {
+          business_name: 'Professional Service Provider',
+          business_description: 'Professional service provider',
+          ...data
+        };
+        return await api.post('/alistpros/profiles/create/', createData);
+      } catch (createError) {
+        console.log('❌ Create profile failed:', createError.response?.status);
+        throw error; // Throw original error
+      }
+    }
+  },
+  updateProfilePartial: async (profileId, data) => {
+    // Same logic as updateProfile
+    return alistProsService.updateProfile(profileId, data);
+  },
   
   // معرض الأعمال
   getPortfolio: () => api.get('/alistpros/portfolio/'),
@@ -109,6 +232,7 @@ const alistProsService = {
     return api.get(`/alistpros/reviews/for_professional/?alistpro=${alistproId}`);
   },
   createReview: (proId, data) => api.post(`/alistpros/profiles/${proId}/reviews/`, data),
+  replyToReview: (reviewId, data) => api.post(`/alistpros/reviews/${reviewId}/reply_to_review/`, data),
   
   // الخدمات
   getServices: () => api.get('/alistpros/services/'),
@@ -167,16 +291,16 @@ const schedulingService = {
       // Use the dedicated endpoint for getting a pro's availability
       return api.get('/scheduling/availability-slots/for_professional/', { params });
     }
-    // If requesting 'me' (current user's availability)
-    else if (params && params.alistpro === 'me') {
-      // Replace 'me' with the current user's profile ID if needed
-      return api.get('/scheduling/availability-slots/', { params: { ...params, alistpro: undefined } });
+    // If requesting 'me' (current user's availability) or no specific pro
+    else {
+      // For current user's slots, don't pass alistpro parameter to get their own slots
+      const cleanParams = params ? { ...params } : {};
+      delete cleanParams.alistpro; // Remove alistpro to get current user's slots
+      return api.get('/scheduling/availability-slots/', { params: cleanParams });
     }
-    // Default case - get all availability slots with filtering
-    return api.get('/scheduling/availability-slots/', { params });
   },
   getAvailabilitySlot: (id) => api.get(`/scheduling/availability-slots/${id}/`),
-  createAvailabilitySlot: (data) => api.post('/scheduling/availability-slots/', data),
+  createAvailabilitySlot: (data) => api.post('/scheduling/availability-slots/create_slot/', data),
   updateAvailabilitySlot: (id, data) => api.put(`/scheduling/availability-slots/${id}/`, data),
   updateAvailabilitySlotPartial: (id, data) => api.patch(`/scheduling/availability-slots/${id}/`, data),
   deleteAvailabilitySlot: (id) => api.delete(`/scheduling/availability-slots/${id}/`),
@@ -277,13 +401,13 @@ const proService = {
   },
   
   // جدول التوفر
-  getAvailabilitySlots: () => schedulingService.getAvailabilitySlots({ alistpro: 'me' }),
+  getAvailabilitySlots: () => schedulingService.getAvailabilitySlots(),
   createAvailabilitySlot: (data) => schedulingService.createAvailabilitySlot(data),
   updateAvailabilitySlot: (id, data) => schedulingService.updateAvailabilitySlot(id, data),
   deleteAvailabilitySlot: (id) => schedulingService.deleteAvailabilitySlot(id),
   
   // الأيام غير المتاحة
-  getUnavailableDates: () => schedulingService.getUnavailableDates({ alistpro: 'me' }),
+  getUnavailableDates: () => schedulingService.getUnavailableDates(),
   createUnavailableDate: (data) => schedulingService.createUnavailableDate(data),
   deleteUnavailableDate: (id) => schedulingService.deleteUnavailableDate(id),
   

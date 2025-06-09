@@ -23,7 +23,7 @@ export const login = async (credentials) => {
 
 export const verifyEmail = async (token, userId) => {
   try {
-    const response = await api.get(`/users/verify-email/${token}/${userId}/`);
+    const response = await api.get(`/users/verify-email/?token=${token}&user_id=${userId}`);
     return response.data;
   } catch (error) {
     throw error.response?.data || { detail: 'Email verification failed' };

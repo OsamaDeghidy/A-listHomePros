@@ -1,0 +1,138 @@
+/* Availability Page Specific Styles */
+
+.availability-slot {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border-color: #bbf7d0;
+  transition: all 0.3s ease;
+}
+
+.availability-slot:hover {
+  background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);
+}
+
+.unavailable-date {
+  background: linear-gradient(135deg, #fef2f2, #fecaca);
+  border-color: #fca5a5;
+  transition: all 0.3s ease;
+}
+
+.unavailable-date:hover {
+  background: linear-gradient(135deg, #fecaca, #f87171);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+}
+
+.day-column {
+  min-height: 200px;
+  transition: all 0.3s ease;
+}
+
+.day-column:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.stats-card {
+  transition: all 0.3s ease;
+}
+
+.stats-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+}
+
+.time-input:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.action-button {
+  transition: all 0.2s ease;
+}
+
+.action-button:hover {
+  transform: scale(1.05);
+}
+
+/* Animation for slot cards */
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.availability-slot,
+.unavailable-date {
+  animation: slideInUp 0.3s ease-out;
+}
+
+/* Loading states */
+.loading-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .availability-slot {
+    background: linear-gradient(135deg, #064e3b, #065f46);
+    border-color: #047857;
+  }
+  
+  .unavailable-date {
+    background: linear-gradient(135deg, #7f1d1d, #991b1b);
+    border-color: #dc2626;
+  }
+}
+
+/* Responsive design improvements */
+@media (max-width: 768px) {
+  .day-column {
+    min-height: 150px;
+  }
+  
+  .stats-card {
+    padding: 1rem;
+  }
+}
+
+/* Accessibility improvements */
+.availability-slot:focus,
+.unavailable-date:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+  .action-button,
+  .modal-backdrop {
+    display: none !important;
+  }
+  
+  .availability-slot,
+  .unavailable-date {
+    box-shadow: none;
+    border: 1px solid #ccc;
+  }
+} 

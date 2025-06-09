@@ -589,3 +589,25 @@ If tests fail, check the following:
    لان نعدنا نبدا فى ربط الصفحات وتطوير الموقع بشكل احترافى اولا صفحه الهو بيج اريدها ان تظهر لى الدتا اللى فى الباك اند لا الفيك داتا   دى معلومات ممكن تساعدك 
 
    
+
+
+   git status
+   git add .
+   git status
+   git add .
+   git commit -m "تحديث: إصلاح الهجرات وربط واجهات الفرونت إند مع الباك إند"
+   git push origin main
+
+
+
+
+stripe mail 
+   mail: Jwest@alisthp.com    password : J1983we$t2025
+
+google
+  mail:  Jeffreywest1983@gmail.com   passwod : J1983We$t
+
+
+
+cd server; pip install channels==4.0.0 channels-redis==4.1.0
+

@@ -11,27 +11,41 @@ class AvailabilitySlot(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name='availability_slots'
     )
+    # Support both old and new structure
+    professional = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='professional_availability_slots',
+        null=True,
+        blank=True,
+        help_text='Direct reference to professional user (for compatibility)'
+    )
     day_of_week = models.IntegerField(
         choices=[
-            (0, 'Monday'),
-            (1, 'Tuesday'),
-            (2, 'Wednesday'),
-            (3, 'Thursday'),
-            (4, 'Friday'),
-            (5, 'Saturday'),
-            (6, 'Sunday'),
+            (0, 'Sunday'),
+            (1, 'Monday'),
+            (2, 'Tuesday'),
+            (3, 'Wednesday'),
+            (4, 'Thursday'),
+            (5, 'Friday'),
+            (6, 'Saturday'),
         ]
     )
     start_time = models.TimeField()
     end_time = models.TimeField()
     is_recurring = models.BooleanField(default=True)
+    is_available = models.BooleanField(default=True)
     
     class Meta:
         ordering = ['day_of_week', 'start_time']
         
     def __str__(self):
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        return f"{self.alistpro.business_name} - {day_names[self.day_of_week]} {self.start_time} to {self.end_time}"
+        day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+        if self.alistpro:
+            name = self.alistpro.business_name or self.alistpro.user.name
+        else:
+            name = self.professional.name
+        return f"{name} - {day_names[self.day_of_week]} {self.start_time} to {self.end_time}"
 
 
 class UnavailableDate(TimeStampedModel):
@@ -41,14 +55,28 @@ class UnavailableDate(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name='unavailable_dates'
     )
-    date = models.DateField()
+    # Support both old and new structure  
+    professional = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='professional_unavailable_dates',
+        null=True,
+        blank=True,
+        help_text='Direct reference to professional user (for compatibility)'
+    )
+    start_date = models.DateField(help_text="Start date of unavailability")
+    end_date = models.DateField(blank=True, null=True, help_text="End date of unavailability (optional, defaults to start_date)")
     reason = models.CharField(max_length=255, blank=True)
     
     class Meta:
-        ordering = ['date']
+        ordering = ['start_date']
         
     def __str__(self):
-        return f"{self.alistpro.business_name} - Unavailable on {self.date}"
+        if self.alistpro:
+            name = self.alistpro.business_name or self.alistpro.user.name
+        else:
+            name = self.professional.name
+        return f"{name} - Unavailable on {self.start_date}"
 
 
 class AppointmentStatus(models.TextChoices):

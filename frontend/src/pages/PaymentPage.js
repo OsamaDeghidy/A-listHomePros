@@ -53,7 +53,7 @@ const PaymentPage = () => {
             fees: 20,
             tax: 30,
             total: 500,
-            currency: 'EGP'
+            currency: 'USD'
           };
           setAppointmentDetails(mockAppointmentData);
         }

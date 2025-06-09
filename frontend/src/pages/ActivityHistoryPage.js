@@ -88,15 +88,15 @@ const ActivityHistoryPage = () => {
   // Fetch data
   useEffect(() => {
     if (isAuthenticated) {
-      fetchActivityHistory();
+    fetchActivityHistory();
     }
   }, [isAuthenticated]);
-
+  
   // Filter and sort activities
   useEffect(() => {
     filterAndSortActivities();
   }, [activities, activeFilters, searchQuery, sortOrder]);
-
+  
   const fetchActivityHistory = async () => {
     setIsLoading(true);
     setError(null);
@@ -221,7 +221,7 @@ const ActivityHistoryPage = () => {
 
   const filterAndSortActivities = () => {
     let filtered = [...activities];
-
+    
     // Apply type filter
     if (activeFilters.type !== 'all') {
       filtered = filtered.filter(activity => activity.type === activeFilters.type);
@@ -231,11 +231,11 @@ const ActivityHistoryPage = () => {
     if (activeFilters.status !== 'all') {
       filtered = filtered.filter(activity => activity.status === activeFilters.status);
     }
-
+    
     // Apply date range filter
     const now = new Date();
     let fromDate;
-
+    
     switch (activeFilters.dateRange) {
       case 'today':
         fromDate = new Date(now.setHours(0, 0, 0, 0));
@@ -260,7 +260,7 @@ const ActivityHistoryPage = () => {
         // 'all' - no date filtering
         break;
     }
-
+    
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -278,10 +278,10 @@ const ActivityHistoryPage = () => {
         return new Date(a.timestamp) - new Date(b.timestamp);
       }
     });
-
+    
     setFilteredActivities(filtered);
   };
-
+  
   // Helper functions
   const getAppointmentTitle = (appointment) => {
     const statusMap = {
@@ -395,7 +395,7 @@ const ActivityHistoryPage = () => {
         return <FaUserCircle className="text-gray-500" />;
     }
   };
-
+  
   const getStatusBadge = (type, status) => {
     let config = { color: 'gray', text: status };
 
@@ -548,7 +548,7 @@ const ActivityHistoryPage = () => {
     setSelectedActivityDetails(null);
     setShowActivityModal(false);
   };
-
+  
   const groupActivitiesByDate = (activities) => {
     const grouped = {};
     
@@ -566,10 +566,10 @@ const ActivityHistoryPage = () => {
       
       grouped[dateString].push(activity);
     });
-
+    
     return grouped;
   };
-
+  
   // Activity Item Component
   const ActivityItem = ({ activity }) => (
     <motion.div
@@ -597,7 +597,7 @@ const ActivityHistoryPage = () => {
             <div className="flex justify-between items-start mb-2">
               <div className="flex-1">
                 <div className="flex items-center space-x-2 mb-1">
-                  <h3 className="text-sm font-medium text-gray-900">{activity.title}</h3>
+              <h3 className="text-sm font-medium text-gray-900">{activity.title}</h3>
                   {getStatusBadge(activity.type, activity.status)}
                 </div>
                 <p className="text-sm text-gray-600 leading-relaxed">{activity.description}</p>
@@ -640,30 +640,30 @@ const ActivityHistoryPage = () => {
       <div className="flex flex-col items-center justify-center py-12">
         <FaSpinner className="animate-spin text-blue-600 text-4xl mb-4" />
         <p className="text-gray-600">{isArabic ? 'جاري تحميل تاريخ الأنشطة...' : 'Loading activity history...'}</p>
-      </div>
-    );
+    </div>
+  );
   }
-
+  
   const groupedActivities = groupActivitiesByDate(filteredActivities);
-
+  
   return (
     <>
       <Helmet>
         <title>{isArabic ? 'تاريخ الأنشطة | A-List Home Pros' : 'Activity History | A-List Home Pros'}</title>
         <meta name="description" content={isArabic ? 'عرض وإدارة تاريخ أنشطتك وتفاعلاتك على المنصة' : 'View and manage your activity history and interactions on the platform'} />
       </Helmet>
-
+      
       <div className="space-y-6">
-        {/* Header */}
+          {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-          <div>
+            <div>
             <h1 className="text-2xl font-bold text-gray-900">
               {isArabic ? 'تاريخ الأنشطة' : 'Activity History'}
             </h1>
             <p className="text-gray-600">
               {isArabic ? 'تتبع أنشطتك الأخيرة وتفاعلاتك على المنصة' : 'Track your recent activities and interactions on the platform'}
-            </p>
-          </div>
+              </p>
+            </div>
           <div className="flex items-center space-x-2 mt-4 md:mt-0">
             <button
               onClick={refreshActivities}
@@ -717,8 +717,8 @@ const ActivityHistoryPage = () => {
               </div>
               <FaClock className="h-8 w-8 text-green-200" />
             </div>
-          </div>
-          
+            </div>
+            
           <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -727,7 +727,7 @@ const ActivityHistoryPage = () => {
               </div>
               <FaCalendarAlt className="h-8 w-8 text-purple-200" />
             </div>
-          </div>
+                </div>
           
           <div className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white p-6 rounded-lg">
             <div className="flex items-center justify-between">
@@ -738,8 +738,8 @@ const ActivityHistoryPage = () => {
               <FaUserCircle className="h-8 w-8 text-yellow-200" />
             </div>
           </div>
-        </div>
-
+              </div>
+              
         {/* Search and Filters */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
@@ -753,12 +753,12 @@ const ActivityHistoryPage = () => {
               />
               <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               {searchQuery && (
-                <button
+              <button
                   onClick={() => setSearchQuery('')}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
+              >
                   <FaTimesCircle />
-                </button>
+              </button>
               )}
             </div>
             
@@ -769,7 +769,7 @@ const ActivityHistoryPage = () => {
           
           {/* Filters */}
           <AnimatePresence>
-            {showFilters && (
+          {showFilters && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -777,12 +777,12 @@ const ActivityHistoryPage = () => {
                 className="pt-4 border-t border-gray-100"
               >
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                       {isArabic ? 'نوع النشاط' : 'Activity Type'}
-                    </label>
-                    <select
-                      value={activeFilters.type}
+                  </label>
+                  <select
+                    value={activeFilters.type}
                       onChange={(e) => setActiveFilters(prev => ({ ...prev, type: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
@@ -811,15 +811,15 @@ const ActivityHistoryPage = () => {
                       <option value="confirmed">{isArabic ? 'مؤكد' : 'Confirmed'}</option>
                       <option value="cancelled">{isArabic ? 'ملغي' : 'Cancelled'}</option>
                       <option value="failed">{isArabic ? 'فشل' : 'Failed'}</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                       {isArabic ? 'فترة التاريخ' : 'Date Range'}
-                    </label>
-                    <select
-                      value={activeFilters.dateRange}
+                  </label>
+                  <select
+                    value={activeFilters.dateRange}
                       onChange={(e) => setActiveFilters(prev => ({ ...prev, dateRange: e.target.value }))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
@@ -828,11 +828,11 @@ const ActivityHistoryPage = () => {
                       <option value="week">{isArabic ? 'آخر 7 أيام' : 'Last 7 Days'}</option>
                       <option value="month">{isArabic ? 'آخر 30 يوم' : 'Last 30 Days'}</option>
                       <option value="year">{isArabic ? 'آخر سنة' : 'Last Year'}</option>
-                    </select>
-                  </div>
-                  
-                  <div className="flex items-end">
-                    <button
+                  </select>
+                </div>
+                
+                <div className="flex items-end">
+                  <button
                       onClick={() => {
                         setActiveFilters({ type: 'all', dateRange: 'all', status: 'all' });
                         setSearchQuery('');
@@ -840,7 +840,7 @@ const ActivityHistoryPage = () => {
                       className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                     >
                       {isArabic ? 'إعادة تعيين' : 'Reset Filters'}
-                    </button>
+                  </button>
                   </div>
                 </div>
               </motion.div>
@@ -858,7 +858,7 @@ const ActivityHistoryPage = () => {
               </div>
             </div>
           )}
-
+          
           <div className="p-6">
             {filteredActivities.length === 0 ? (
               <div className="text-center py-12">
@@ -908,8 +908,8 @@ const ActivityHistoryPage = () => {
             )}
           </div>
         </div>
-      </div>
-
+          </div>
+          
       {/* Activity Details Modal */}
       {showActivityModal && selectedActivityDetails && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1029,10 +1029,10 @@ const ActivityHistoryPage = () => {
                         {selectedActivityDetails.data.message && (
                           <p><span className="font-medium">{isArabic ? 'الرسالة:' : 'Message:'}</span> {selectedActivityDetails.data.message}</p>
                         )}
-                      </div>
-                    )}
-                  </div>
-                </div>
+            </div>
+          )}
+        </div>
+      </div>
               )}
             </div>
 

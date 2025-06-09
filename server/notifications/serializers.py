@@ -34,6 +34,7 @@ class NotificationSerializer(serializers.ModelSerializer):
     """Serializer for notifications"""
     class Meta:
         model = Notification
+        ref_name = 'SystemNotification'  # Fix Swagger conflict
         fields = [
             'id', 'user', 'notification_type', 'title', 'message',
             'read', 'read_at', 'related_object_type', 'related_object_id',

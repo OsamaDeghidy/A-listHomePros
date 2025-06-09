@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { proService, serviceService } from '../services/api';
-import { FaList, FaMapMarked, FaFilter, FaSearch } from 'react-icons/fa';
+import { FaList, FaMapMarked, FaFilter, FaSearch, FaUserTie, FaToolbox, FaUsers } from 'react-icons/fa';
 import SearchFilters from '../components/search/SearchFilters';
 import ProsList from '../components/search/ProsList';
 import ProsMap from '../components/search/ProsMap';
 import { useLanguage } from '../hooks/useLanguage';
+import professionalService from '../services/professionalService';
 
 const SearchPage = () => {
   const location = useLocation();

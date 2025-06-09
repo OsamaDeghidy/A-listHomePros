@@ -16,19 +16,61 @@ class AvailabilitySlotSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvailabilitySlot
         fields = ['id', 'alistpro', 'day_of_week', 'day_name', 'start_time', 'end_time', 'is_recurring']
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'alistpro']
     
     def get_day_name(self, obj):
-        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
         return day_names[obj.day_of_week]
+    
+    def create(self, validated_data):
+        """Create availability slot with automatic profile creation"""
+        request = self.context.get('request')
+        if request and request.user:
+            try:
+                alistpro_profile = AListHomeProProfile.objects.get(user=request.user)
+            except AListHomeProProfile.DoesNotExist:
+                # Create basic profile
+                alistpro_profile = AListHomeProProfile.objects.create(
+                    user=request.user,
+                    business_name=f"{request.user.first_name} {request.user.last_name} Professional Services" if request.user.first_name else f"{request.user.email} Professional Services",
+                    business_description="Professional service provider",
+                    years_of_experience=1,
+                    service_radius=25,
+                    is_onboarded=False
+                )
+            
+            validated_data['alistpro'] = alistpro_profile
+        
+        return super().create(validated_data)
 
 
 class UnavailableDateSerializer(serializers.ModelSerializer):
     """Serializer for A-List Home Pro unavailable dates"""
     class Meta:
         model = UnavailableDate
-        fields = ['id', 'alistpro', 'date', 'reason']
-        read_only_fields = ['id']
+        fields = ['id', 'alistpro', 'start_date', 'end_date', 'reason']
+        read_only_fields = ['id', 'alistpro']
+    
+    def create(self, validated_data):
+        """Create unavailable date with automatic profile creation"""
+        request = self.context.get('request')
+        if request and request.user:
+            try:
+                alistpro_profile = AListHomeProProfile.objects.get(user=request.user)
+            except AListHomeProProfile.DoesNotExist:
+                # Create basic profile
+                alistpro_profile = AListHomeProProfile.objects.create(
+                    user=request.user,
+                    business_name=f"{request.user.first_name} {request.user.last_name} Professional Services" if request.user.first_name else f"{request.user.email} Professional Services",
+                    business_description="Professional service provider",
+                    years_of_experience=1,
+                    service_radius=25,
+                    is_onboarded=False
+                )
+            
+            validated_data['alistpro'] = alistpro_profile
+        
+        return super().create(validated_data)
 
 
 class AppointmentNoteSerializer(serializers.ModelSerializer):
@@ -91,7 +133,15 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
             )
         
         # Check if the alistpro is available on this date
-        if UnavailableDate.objects.filter(alistpro=alistpro, date=appointment_date).exists():
+        if UnavailableDate.objects.filter(
+            alistpro=alistpro, 
+            start_date__lte=appointment_date,
+            end_date__gte=appointment_date
+        ).exists() or UnavailableDate.objects.filter(
+            alistpro=alistpro, 
+            start_date=appointment_date,
+            end_date__isnull=True
+        ).exists():
             raise serializers.ValidationError("The professional is not available on this date")
         
         # Check if the time slot falls within the alistpro's availability
@@ -146,7 +196,15 @@ class AppointmentUpdateSerializer(serializers.ModelSerializer):
             alistpro = instance.alistpro
             
             # Check if the alistpro is available on this date
-            if UnavailableDate.objects.filter(alistpro=alistpro, date=appointment_date).exists():
+            if UnavailableDate.objects.filter(
+                alistpro=alistpro, 
+                start_date__lte=appointment_date,
+                end_date__gte=appointment_date
+            ).exists() or UnavailableDate.objects.filter(
+                alistpro=alistpro, 
+                start_date=appointment_date,
+                end_date__isnull=True
+            ).exists():
                 raise serializers.ValidationError("The professional is not available on this date")
             
             # Check if the time slot falls within the alistpro's availability

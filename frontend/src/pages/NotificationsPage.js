@@ -78,15 +78,15 @@ const NotificationsPage = () => {
   // Fetch data
   useEffect(() => {
     if (isAuthenticated) {
-      fetchNotifications();
+    fetchNotifications();
     }
   }, [isAuthenticated]);
-
+  
   // Filter and sort notifications
   useEffect(() => {
     filterAndSortNotifications();
   }, [notifications, activeFilter, statusFilter, searchQuery, sortOrder]);
-
+  
   const fetchNotifications = async () => {
     setIsLoading(true);
     setError(null);
@@ -139,7 +139,7 @@ const NotificationsPage = () => {
 
   const filterAndSortNotifications = () => {
     let filtered = [...notifications];
-
+    
     // Apply type filter
     if (activeFilter !== 'all') {
       filtered = filtered.filter(notification => (notification.type || 'system') === activeFilter);
@@ -151,7 +151,7 @@ const NotificationsPage = () => {
     } else if (statusFilter === 'read') {
       filtered = filtered.filter(notification => notification.is_read || notification.read);
     }
-
+    
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -173,14 +173,14 @@ const NotificationsPage = () => {
         return dateA - dateB;
       }
     });
-
+    
     setFilteredNotifications(filtered);
     
     // Reset selection when filter changes
     setSelectedNotifications([]);
     setSelectAll(false);
   };
-
+  
   const markAsRead = async (ids) => {
     setMarkingAsRead(true);
     
@@ -254,7 +254,7 @@ const NotificationsPage = () => {
       );
     }
   };
-
+  
   const handleSelectNotification = (id) => {
     setSelectedNotifications(prev => {
       if (prev.includes(id)) {
@@ -264,7 +264,7 @@ const NotificationsPage = () => {
       }
     });
   };
-
+  
   const handleSelectAll = () => {
     if (selectAll) {
       setSelectedNotifications([]);
@@ -273,7 +273,7 @@ const NotificationsPage = () => {
     }
     setSelectAll(!selectAll);
   };
-
+  
   const showNotificationDetails = (notification) => {
     setSelectedNotificationDetails(notification);
     setShowNotificationModal(true);
@@ -443,33 +443,33 @@ const NotificationsPage = () => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className={`
+      className={`
           border-l-4 border-b last:border-b-0 p-4 hover:bg-gray-50 transition-all duration-200 cursor-pointer
           ${isUnread ? 'bg-blue-50 border-l-blue-500' : getPriorityColor(notification.priority)}
-          ${isSelected ? 'bg-blue-100 hover:bg-blue-100' : ''}
-        `}
+        ${isSelected ? 'bg-blue-100 hover:bg-blue-100' : ''}
+      `}
         onClick={() => showNotificationDetails(notification)}
-      >
-        <div className="flex items-start">
-          <div className="flex-shrink-0 mr-3 mt-1">
-            <input 
-              type="checkbox"
-              checked={isSelected}
+    >
+      <div className="flex items-start">
+        <div className="flex-shrink-0 mr-3 mt-1">
+          <input 
+            type="checkbox"
+            checked={isSelected}
               onChange={(e) => {
                 e.stopPropagation();
                 onSelect(notification.id);
               }}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-          </div>
-          
-          <div className="flex-shrink-0 mr-3 mt-1">
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+        </div>
+        
+        <div className="flex-shrink-0 mr-3 mt-1">
             <div className="p-2 rounded-full bg-white shadow-sm">
               {getNotificationIcon(notification.type, notification.priority)}
             </div>
-          </div>
-          
-          <div className="flex-grow min-w-0">
+        </div>
+        
+        <div className="flex-grow min-w-0">
             <div className="flex justify-between items-start">
               <h3 className={`text-sm font-medium ${isUnread ? 'text-blue-800' : 'text-gray-900'}`}>
                 {notification.title}
@@ -508,21 +508,21 @@ const NotificationsPage = () => {
       <div className="flex flex-col items-center justify-center py-12">
         <FaSpinner className="animate-spin text-blue-600 text-4xl mb-4" />
         <p className="text-gray-600">{isArabic ? 'جاري تحميل الإشعارات...' : 'Loading notifications...'}</p>
-      </div>
-    );
+    </div>
+  );
   }
-
+  
   return (
     <>
       <Helmet>
         <title>{isArabic ? 'الإشعارات | A-List Home Pros' : 'Notifications | A-List Home Pros'}</title>
         <meta name="description" content={isArabic ? 'عرض وإدارة إشعاراتك' : 'View and manage your notifications'} />
       </Helmet>
-
+      
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-          <div>
+            <div>
             <h1 className="text-2xl font-bold text-gray-900">
               {isArabic ? 'الإشعارات' : 'Notifications'}
               {notificationStats.unread > 0 && (
@@ -533,8 +533,8 @@ const NotificationsPage = () => {
             </h1>
             <p className="text-gray-600">
               {isArabic ? 'عرض وإدارة جميع إشعاراتك' : 'View and manage all your notifications'}
-            </p>
-          </div>
+              </p>
+            </div>
           <div className="flex items-center space-x-2 mt-4 md:mt-0">
             <button
               onClick={() => setShowFilters(!showFilters)}
@@ -575,8 +575,8 @@ const NotificationsPage = () => {
               </div>
               <FaExclamationCircle className="h-8 w-8 text-red-200" />
             </div>
-          </div>
-          
+            </div>
+            
           <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -671,7 +671,7 @@ const NotificationsPage = () => {
                   </div>
                   
                   <div className="flex items-end">
-                    <button
+                <button
                       onClick={() => {
                         setActiveFilter('all');
                         setStatusFilter('all');
@@ -680,7 +680,7 @@ const NotificationsPage = () => {
                       className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                     >
                       {isArabic ? 'إعادة تعيين' : 'Reset Filters'}
-                    </button>
+                </button>
                   </div>
                 </div>
               </motion.div>
@@ -701,42 +701,42 @@ const NotificationsPage = () => {
 
           {/* Bulk Actions */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                checked={selectAll}
-                onChange={handleSelectAll}
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
-              />
-              <span className="text-sm text-gray-600">
+                  />
+                  <span className="text-sm text-gray-600">
                 {selectedNotifications.length > 0 ? (
                   <span>{isArabic ? `${selectedNotifications.length} محدد` : `${selectedNotifications.length} selected`}</span>
                 ) : (
                   <span>{isArabic ? 'تحديد الكل' : 'Select all'}</span>
-                )}
-              </span>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              {selectedNotifications.length > 0 && (
-                <>
-                  <button
-                    onClick={() => markAsRead(selectedNotifications)}
+                    )}
+                  </span>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  {selectedNotifications.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => markAsRead(selectedNotifications)}
                     disabled={markingAsRead}
                     className="inline-flex items-center px-3 py-1 border border-gray-300 text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                  >
+                      >
                     {markingAsRead ? <FaSpinner className="animate-spin mr-1" /> : <FaCheck className="mr-1" />}
                     {isArabic ? 'قراءة' : 'Mark Read'}
-                  </button>
-                  <button
-                    onClick={() => deleteNotifications(selectedNotifications)}
+                      </button>
+                      <button
+                        onClick={() => deleteNotifications(selectedNotifications)}
                     className="inline-flex items-center px-3 py-1 border border-gray-300 text-xs font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
-                  >
+                      >
                     <FaTrashAlt className="mr-1" />
                     {isArabic ? 'حذف' : 'Delete'}
-                  </button>
-                </>
-              )}
+                      </button>
+                    </>
+                  )}
             </div>
           </div>
 
@@ -753,7 +753,7 @@ const NotificationsPage = () => {
                 }
               </p>
               {(searchQuery || activeFilter !== 'all' || statusFilter !== 'all') && (
-                <button
+                    <button
                   onClick={() => {
                     setActiveFilter('all');
                     setStatusFilter('all');
@@ -762,23 +762,23 @@ const NotificationsPage = () => {
                   className="text-blue-600 hover:underline font-medium"
                 >
                   {isArabic ? 'مسح جميع الفلاتر' : 'Clear all filters'}
-                </button>
-              )}
-            </div>
-          ) : (
+                    </button>
+                  )}
+                  </div>
+                ) : (
             <div className="max-h-[60vh] overflow-y-auto">
               {filteredNotifications.map((notification) => (
-                <NotificationItem
-                  key={notification.id}
-                  notification={notification}
-                  isSelected={selectedNotifications.includes(notification.id)}
-                  onSelect={handleSelectNotification}
-                />
-              ))}
+                      <NotificationItem
+                        key={notification.id}
+                        notification={notification}
+                        isSelected={selectedNotifications.includes(notification.id)}
+                        onSelect={handleSelectNotification}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
       {/* Notification Details Modal */}
       {showNotificationModal && selectedNotificationDetails && (
@@ -901,7 +901,7 @@ const NotificationsPage = () => {
                   {isArabic ? 'تعليم كمقروء' : 'Mark as Read'}
                 </button>
               )}
-            </div>
+          </div>
           </motion.div>
         </div>
       )}

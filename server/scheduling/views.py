@@ -110,15 +110,65 @@ class AvailabilitySlotViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=False, methods=['post'])
+    def create_slot(self, request):
+        """Custom endpoint to create availability slot with better error handling"""
+        print(f"🚀 Custom create_slot - User: {request.user.email}")
+        print(f"🚀 Request data: {request.data}")
+        
+        try:
+            # Get or create A-List Pro profile
+            try:
+                alistpro_profile = AListHomeProProfile.objects.get(user=request.user)
+                print(f"✅ Found A-List Pro profile: {alistpro_profile.business_name}")
+            except AListHomeProProfile.DoesNotExist:
+                print(f"🛠️ Creating basic A-List Pro profile for: {request.user.email}")
+                alistpro_profile = AListHomeProProfile.objects.create(
+                    user=request.user,
+                    business_name=f"{request.user.first_name} {request.user.last_name} Professional Services" if request.user.first_name else f"{request.user.email} Professional Services",
+                    business_description="Professional service provider",
+                    years_of_experience=1,
+                    service_radius=25,
+                    is_onboarded=False
+                )
+                print(f"✅ Created A-List Pro profile: {alistpro_profile.business_name}")
+            
+            # Create availability slot
+            slot_data = {
+                'alistpro': alistpro_profile,
+                'day_of_week': request.data.get('day_of_week'),
+                'start_time': request.data.get('start_time'),
+                'end_time': request.data.get('end_time'),
+                'is_recurring': request.data.get('is_recurring', True)
+            }
+            
+            slot = AvailabilitySlot.objects.create(**slot_data)
+            print(f"✅ Created slot: {slot}")
+            
+            # Serialize response
+            serializer = self.get_serializer(slot)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            print(f"❌ Error in create_slot: {str(e)}")
+            print(f"❌ Error type: {type(e)}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            
+            return Response({
+                'error': str(e),
+                'detail': 'Error creating availability slot'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UnavailableDateViewSet(viewsets.ModelViewSet):
     """ViewSet for managing A-List Home Pro unavailable dates"""
     serializer_class = UnavailableDateSerializer
     permission_classes = [permissions.IsAuthenticated, IsAListHomeProOwnerOrAdmin]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ['alistpro', 'date']
-    ordering_fields = ['date']
-    ordering = ['date']
+    filterset_fields = ['alistpro', 'start_date', 'end_date']
+    ordering_fields = ['start_date']
+    ordering = ['start_date']
     
     def get_queryset(self):
         """Return unavailable dates for A-List Home Pros or all if admin"""

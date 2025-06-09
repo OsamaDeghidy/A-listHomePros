@@ -49,7 +49,7 @@ INSTALLED_APPS = [
     # Local apps
     'users',
     'core',
-    'contractors',
+    
     'alistpros_profiles',  # New app for A-List Home Pros
     'payments',
     'leads',
@@ -162,9 +162,14 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
 EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@alistpros.com')
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=60, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='osamaeldeghadey@gmail.com')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='ckqjrnqzrnqzrnqz')
+# Fallback to console backend for development
+EMAIL_USE_CONSOLE_FALLBACK = config('EMAIL_USE_CONSOLE_FALLBACK', default=True, cast=bool)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='osamaeldeghadey@gmail.com')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 SITE_URL = config('SITE_URL', default='http://localhost:8000')
 FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:3000')
 
@@ -212,6 +217,25 @@ CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Stripe settings
-STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
-STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
-STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='sk_test_YOUR_SECRET_KEY_HERE')
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='pk_test_YOUR_PUBLISHABLE_KEY_HERE')
+STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='whsec_YOUR_WEBHOOK_SECRET_HERE')
+
+# Escrow Payment System Settings
+ESCROW_PLATFORM_FEE = 0.05  # 5% platform fee
+ESCROW_MINIMUM_AMOUNT = 50  # Minimum amount for escrow
+ESCROW_MAXIMUM_AMOUNT = 100000  # Maximum amount for escrow
+
+# A-List Home Pros Platform Settings
+PLATFORM_NAME = "A-List Home Pros"
+PLATFORM_EMAIL = "support@alisthomepros.com"
+PLATFORM_PHONE = "+1-800-ALIST-HP"
+
+# Service Categories and Roles
+USER_ROLES = [
+    'client',      # العميل
+    'contractor',  # المحترف المنزلي (Home Pro)
+    'crew',        # طاقم العمل المعتمد
+    'specialist',  # الأخصائي المعتمد
+    'admin'        # المدير
+]

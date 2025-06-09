@@ -93,7 +93,7 @@ const PaymentHistoryPage = () => {
     filterTransactions();
   }, [transactions, searchTerm, statusFilter, typeFilter, dateFilter]);
 
-  const fetchTransactions = async () => {
+    const fetchTransactions = async () => {
     setIsLoading(true);
     setError(null);
 
@@ -144,8 +144,8 @@ const PaymentHistoryPage = () => {
         {
           id: 'TXN-001',
           amount: 125.50,
-          status: 'completed',
-          type: 'payment',
+              status: 'completed',
+              type: 'payment',
           created_at: '2023-12-15T10:30:00Z',
           payment_method: 'Visa ****4832',
           description: 'Plumbing Service',
@@ -160,8 +160,8 @@ const PaymentHistoryPage = () => {
         {
           id: 'TXN-002',
           amount: 89.99,
-          status: 'pending',
-          type: 'payment',
+              status: 'pending',
+              type: 'payment',
           created_at: '2023-12-14T14:15:00Z',
           payment_method: 'Mastercard ****1234',
           description: 'Electrical Work',
@@ -225,7 +225,7 @@ const PaymentHistoryPage = () => {
       ];
       
       setPaymentMethods(mockPaymentMethods);
-    } catch (err) {
+      } catch (err) {
       console.error('Error fetching payment methods:', err);
       // Keep empty array if API fails
       setPaymentMethods([]);
@@ -254,17 +254,17 @@ const PaymentHistoryPage = () => {
 
   const filterTransactions = () => {
     let filtered = [...transactions];
-
+    
     // Apply status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(trx => trx.status === statusFilter);
     }
-
+    
     // Apply type filter
     if (typeFilter !== 'all') {
       filtered = filtered.filter(trx => trx.type === typeFilter);
     }
-
+    
     // Apply date filter
     if (dateFilter !== 'all') {
       const now = new Date();
@@ -282,7 +282,7 @@ const PaymentHistoryPage = () => {
         filtered = filtered.filter(trx => new Date(trx.created_at) >= filterDate);
       }
     }
-
+    
     // Apply search term
     if (searchTerm) {
       const query = searchTerm.toLowerCase();
@@ -334,12 +334,12 @@ const PaymentHistoryPage = () => {
     const config = statusMap[status] || statusMap.pending;
     const Icon = config.icon;
 
-    return (
+        return (
       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-${config.color}-100 text-${config.color}-800`}>
         <Icon className="mr-1" size={10} />
         {config.text}
-      </span>
-    );
+          </span>
+        );
   };
 
   const getTransactionTypeIndicator = (type, amount, status) => {
@@ -347,11 +347,11 @@ const PaymentHistoryPage = () => {
     const color = isRefund ? 'text-green-600' : 'text-red-600';
     const sign = isRefund ? '+' : '-';
     
-    return (
+        return (
       <span className={`font-medium ${color}`}>
         {sign}{formatCurrency(amount)}
-      </span>
-    );
+          </span>
+        );
   };
 
   const handleAddPaymentMethod = () => {
@@ -713,31 +713,31 @@ const PaymentHistoryPage = () => {
               <FaChartLine className="h-8 w-8 text-purple-200" />
             </div>
           </div>
-        </div>
-
-        {/* Search and Filters */}
+          </div>
+          
+          {/* Search and Filters */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-            <div className="relative w-full md:w-1/2">
-              <input
-                type="text"
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+              <div className="relative w-full md:w-1/2">
+                <input
+                  type="text"
                 placeholder={isArabic ? 'البحث في المعاملات...' : 'Search transactions...'}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                value={searchTerm}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                />
+                <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               {searchTerm && (
-                <button
+                <button 
                   onClick={() => setSearchTerm('')}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   <FaTimesCircle />
                 </button>
               )}
+              </div>
             </div>
-          </div>
-          
+            
           {/* Filters */}
           <AnimatePresence>
             {showFilters && (
@@ -809,74 +809,74 @@ const PaymentHistoryPage = () => {
               </motion.div>
             )}
           </AnimatePresence>
-        </div>
-
-        {/* Transactions List */}
+          </div>
+          
+          {/* Transactions List */}
         <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          {filteredTransactions.length === 0 ? (
-            <div className="p-8 text-center">
-              <FaCreditCard className="mx-auto text-gray-300 mb-4" size={48} />
+            {filteredTransactions.length === 0 ? (
+              <div className="p-8 text-center">
+                <FaCreditCard className="mx-auto text-gray-300 mb-4" size={48} />
               <h3 className="text-lg font-medium text-gray-700 mb-2">
                 {isArabic ? 'لا توجد معاملات' : 'No transactions found'}
               </h3>
-              <p className="text-gray-500 mb-4">
-                {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all'
+                <p className="text-gray-500 mb-4">
+                  {searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all'
                   ? (isArabic ? 'جرب تعديل الفلاتر لرؤية المزيد من النتائج' : 'Try adjusting your filters to see more results')
                   : (isArabic ? 'لم تقم بأي عمليات دفع بعد' : "You haven't made any payments yet")
                 }
-              </p>
-              {(searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all') && (
-                <button
-                  onClick={resetFilters}
-                  className="text-blue-600 hover:underline font-medium"
-                >
+                </p>
+                {(searchTerm || statusFilter !== 'all' || typeFilter !== 'all' || dateFilter !== 'all') && (
+                  <button
+                    onClick={resetFilters}
+                    className="text-blue-600 hover:underline font-medium"
+                  >
                   {isArabic ? 'مسح جميع الفلاتر' : 'Clear all filters'}
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'معرف المعاملة' : 'Transaction ID'}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'التاريخ' : 'Date'}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'الوصف' : 'Description'}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'المبلغ' : 'Amount'}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'الحالة' : 'Status'}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'وسيلة الدفع' : 'Payment Method'}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       {isArabic ? 'الإجراءات' : 'Actions'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredTransactions.map((transaction) => (
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredTransactions.map((transaction) => (
                     <motion.tr 
                       key={transaction.id} 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       className="hover:bg-gray-50"
                     >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {transaction.id}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {transaction.id}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDate(transaction.created_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         <div>
                           {transaction.description || (
                             transaction.professional?.business_name 
@@ -889,22 +889,22 @@ const PaymentHistoryPage = () => {
                             </div>
                           )}
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         {getTransactionTypeIndicator(transaction.type, transaction.amount, transaction.status)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(transaction.status)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {getStatusBadge(transaction.status)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {transaction.payment_method || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                        <div className="flex space-x-2 justify-end">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                          <div className="flex space-x-2 justify-end">
                           <button
                             onClick={() => setSelectedTransaction(transaction)}
-                            className="text-blue-600 hover:text-blue-800"
-                          >
+                              className="text-blue-600 hover:text-blue-800"
+                            >
                             <FaEye />
                           </button>
                           {transaction.appointment && (
@@ -916,26 +916,26 @@ const PaymentHistoryPage = () => {
                             </Link>
                           )}
                           {(transaction.status === 'completed' || transaction.status === 'succeeded') && (
-                            <a
+                              <a
                               href={transaction.receipt_url || '#'}
-                              className="text-gray-600 hover:text-gray-800"
+                                className="text-gray-600 hover:text-gray-800"
                               target="_blank"
                               rel="noopener noreferrer"
-                            >
+                              >
                               <FaReceipt />
-                            </a>
-                          )}
-                        </div>
-                      </td>
+                              </a>
+                            )}
+                          </div>
+                        </td>
                     </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Payment Methods Section */}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          
+          {/* Payment Methods Section */}
         <div className="bg-white rounded-lg shadow-sm border p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-xl font-bold text-gray-900">
@@ -948,8 +948,8 @@ const PaymentHistoryPage = () => {
               <FaPlus className="mr-2 h-4 w-4" />
               {isArabic ? 'إضافة' : 'Add Method'}
             </button>
-          </div>
-
+            </div>
+            
           {/* Warning if no default payment method */}
           {paymentMethods.length > 0 && !paymentMethods.some(method => method.is_default) && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
@@ -988,7 +988,7 @@ const PaymentHistoryPage = () => {
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
+              <div className="space-y-4">
               {paymentMethods.map((method) => (
                 <motion.div 
                   key={method.id} 
@@ -999,7 +999,7 @@ const PaymentHistoryPage = () => {
                   <div className="flex items-center">
                     <div className="bg-blue-50 p-3 rounded-lg mr-4">
                       {method.type === 'credit_card' ? (
-                        <FaCreditCard className="text-blue-600" size={24} />
+                      <FaCreditCard className="text-blue-600" size={24} />
                       ) : method.type === 'bank_account' ? (
                         <FaUniversity className="text-blue-600" size={24} />
                       ) : (
@@ -1030,9 +1030,9 @@ const PaymentHistoryPage = () => {
                   </div>
                   <div className="flex items-center space-x-2">
                     {method.is_default ? (
-                      <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                  <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
                         {isArabic ? 'افتراضي' : 'Default'}
-                      </span>
+                  </span>
                     ) : (
                       <button
                         onClick={() => handleSetDefaultPaymentMethod(method.id)}
@@ -1054,8 +1054,8 @@ const PaymentHistoryPage = () => {
             </div>
           )}
         </div>
-      </div>
-
+                </div>
+                
       {/* Transaction Details Modal */}
       {selectedTransaction && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1074,15 +1074,15 @@ const PaymentHistoryPage = () => {
               >
                 <FaTimesCircle className="h-5 w-5" />
               </button>
-            </div>
+                    </div>
 
             <div className="space-y-4">
-              <div>
+                    <div>
                 <label className="text-sm font-medium text-gray-700">
                   {isArabic ? 'معرف المعاملة' : 'Transaction ID'}
                 </label>
                 <p className="text-gray-900 mt-1">{selectedTransaction.id}</p>
-              </div>
+                    </div>
 
               <div>
                 <label className="text-sm font-medium text-gray-700">
@@ -1091,7 +1091,7 @@ const PaymentHistoryPage = () => {
                 <p className="text-gray-900 mt-1 text-lg font-semibold">
                   {formatCurrency(selectedTransaction.amount)}
                 </p>
-              </div>
+                  </div>
 
               <div>
                 <label className="text-sm font-medium text-gray-700">
@@ -1107,7 +1107,7 @@ const PaymentHistoryPage = () => {
                   {isArabic ? 'التاريخ' : 'Date'}
                 </label>
                 <p className="text-gray-900 mt-1">{formatDate(selectedTransaction.created_at)}</p>
-              </div>
+            </div>
 
               {selectedTransaction.professional && (
                 <div>
@@ -1115,7 +1115,7 @@ const PaymentHistoryPage = () => {
                     {isArabic ? 'مقدم الخدمة' : 'Service Provider'}
                   </label>
                   <p className="text-gray-900 mt-1">{selectedTransaction.professional.business_name}</p>
-                </div>
+          </div>
               )}
 
               {selectedTransaction.payment_method && (
@@ -1124,9 +1124,9 @@ const PaymentHistoryPage = () => {
                     {isArabic ? 'وسيلة الدفع' : 'Payment Method'}
                   </label>
                   <p className="text-gray-900 mt-1">{selectedTransaction.payment_method}</p>
-                </div>
+        </div>
               )}
-            </div>
+      </div>
 
             <div className="flex space-x-3 mt-6">
               <button

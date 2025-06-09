@@ -1,15 +1,12 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from core.models import TimeStampedModel
+from decimal import Decimal
 
-# Import both models to support backward compatibility during transition
-try:
-    from alistpros_profiles.models import AListHomeProProfile
-    USE_NEW_MODEL = True
-except ImportError:
-    from contractors.models import ContractorProfile
-    USE_NEW_MODEL = False
+# Use AListHomeProProfile model
+from alistpros_profiles.models import AListHomeProProfile
 
 
 class PaymentStatus(models.TextChoices):
@@ -25,12 +22,9 @@ class Payment(TimeStampedModel):
     Model to track payments between clients and A-List Home Pros
     """
     client = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='payments_made')
-    # Use a string reference to avoid circular import issues
-    alistpro = models.ForeignKey('alistpros_profiles.AListHomeProProfile', on_delete=models.CASCADE, 
-                                 related_name='payments_received', null=True, blank=True)
-    # Keep contractor field for backward compatibility
-    contractor = models.ForeignKey('contractors.ContractorProfile', on_delete=models.CASCADE, 
-                                   related_name='payments_received_old', null=True, blank=True)
+    # Use AListHomeProProfile for all professional users
+    professional = models.ForeignKey('alistpros_profiles.AListHomeProProfile', on_delete=models.CASCADE, 
+                                     related_name='payments_received', null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     description = models.TextField()
     status = models.CharField(max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING)
@@ -39,10 +33,8 @@ class Payment(TimeStampedModel):
     completed_at = models.DateTimeField(blank=True, null=True)
     
     def __str__(self):
-        if self.alistpro:
-            pro_name = self.alistpro.business_name
-        elif self.contractor:
-            pro_name = self.contractor.business_name
+        if self.professional:
+            pro_name = self.professional.business_name or self.professional.user.name
         else:
             pro_name = "Unknown Pro"
         return f"Payment of ${self.amount} from {self.client.name} to {pro_name}"
@@ -84,3 +76,135 @@ class AListHomeProStripeAccount(TimeStampedModel):
 class StripeAccount(AListHomeProStripeAccount):
     class Meta:
         proxy = True
+
+
+class EscrowStatus(models.TextChoices):
+    PENDING = 'pending', _('Pending Deposit')
+    FUNDED = 'funded', _('Funded')
+    IN_PROGRESS = 'in_progress', _('Work In Progress')
+    PENDING_APPROVAL = 'pending_approval', _('Pending Client Approval')
+    RELEASED = 'released', _('Released to Provider')
+    DISPUTED = 'disputed', _('Disputed')
+    REFUNDED = 'refunded', _('Refunded to Client')
+    CANCELLED = 'cancelled', _('Cancelled')
+
+
+class EscrowAccount(TimeStampedModel):
+    """
+    Escrow account for secure payments between clients and service providers
+    Similar to Upwork's escrow system
+    """
+    client = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='escrow_accounts')
+    specialist = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
+                                   related_name='managed_escrows', null=True, blank=True,
+                                   limit_choices_to={'role': 'specialist'})
+    project_title = models.CharField(max_length=255)
+    project_description = models.TextField()
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    platform_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    net_amount = models.DecimalField(max_digits=10, decimal_places=2)  # Amount after platform fee
+    status = models.CharField(max_length=20, choices=EscrowStatus.choices, default=EscrowStatus.PENDING)
+    
+    # Stripe integration
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    stripe_transfer_id = models.CharField(max_length=255, blank=True, null=True)
+    
+    # Timeline
+    funded_at = models.DateTimeField(blank=True, null=True)
+    work_started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    approved_at = models.DateTimeField(blank=True, null=True)
+    released_at = models.DateTimeField(blank=True, null=True)
+    
+    # Dispute handling
+    dispute_reason = models.TextField(blank=True, null=True)
+    disputed_at = models.DateTimeField(blank=True, null=True)
+    resolved_at = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"Escrow: {self.project_title} - ${self.total_amount}"
+    
+    def calculate_platform_fee(self):
+        """Calculate platform fee based on total amount"""
+        fee_percentage = getattr(settings, 'ESCROW_PLATFORM_FEE', 0.05)  # 5% default
+        return self.total_amount * Decimal(fee_percentage)
+    
+    def save(self, *args, **kwargs):
+        if not self.platform_fee:
+            self.platform_fee = self.calculate_platform_fee()
+        self.net_amount = self.total_amount - self.platform_fee
+        super().save(*args, **kwargs)
+
+
+class EscrowMilestone(TimeStampedModel):
+    """
+    Milestones within an escrow account for project phases
+    """
+    escrow = models.ForeignKey(EscrowAccount, on_delete=models.CASCADE, related_name='milestones')
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    due_date = models.DateField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    approved_at = models.DateTimeField(blank=True, null=True)
+    released_at = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.escrow.project_title} - {self.title}"
+
+
+class EscrowTransaction(TimeStampedModel):
+    """
+    Track all transactions within an escrow account
+    """
+    TRANSACTION_TYPES = [
+        ('deposit', 'Client Deposit'),
+        ('release', 'Release to Provider'),
+        ('refund', 'Refund to Client'),
+        ('fee', 'Platform Fee'),
+        ('dispute_fee', 'Dispute Resolution Fee'),
+    ]
+    
+    escrow = models.ForeignKey(EscrowAccount, on_delete=models.CASCADE, related_name='transactions')
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    description = models.TextField()
+    stripe_transaction_id = models.CharField(max_length=255, blank=True, null=True)
+    
+    def __str__(self):
+        return f"{self.escrow.project_title} - {self.transaction_type}: ${self.amount}"
+
+
+class EscrowWorkOrder(TimeStampedModel):
+    """
+    Work orders assigned to contractors/crew through escrow projects
+    """
+    escrow = models.ForeignKey(EscrowAccount, on_delete=models.CASCADE, related_name='work_orders')
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, 
+                                    related_name='assigned_work_orders')
+    work_type = models.CharField(max_length=100)  # 'contractor', 'crew', 'specialist'
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    assigned_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    estimated_hours = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    
+    # Status tracking
+    STATUS_CHOICES = [
+        ('pending', 'Pending Assignment'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('approved', 'Approved by Client'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    # Timeline
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(blank=True, null=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    approved_at = models.DateTimeField(blank=True, null=True)
+    
+    def __str__(self):
+        return f"Work Order: {self.title} - {self.assigned_to.name}"

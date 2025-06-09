@@ -1,71 +1,60 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
-// إنشاء سياق اللغة
+// Language Context
 const LanguageContext = createContext();
 
-// قائمة اللغات المدعومة في التطبيق
-const supportedLanguages = [
-  { code: 'en', name: 'English', dir: 'ltr' },
-  { code: 'ar', name: 'العربية', dir: 'rtl' }
-];
-
-// مزود اللغة الذي يحيط بالتطبيق
+// Language Provider Component
 export const LanguageProvider = ({ children }) => {
-  // تحديد اللغة الافتراضية من التخزين المحلي أو من لغة المستعرض
   const [language, setLanguage] = useState(() => {
-    const savedLanguage = localStorage.getItem('language');
-    if (savedLanguage && supportedLanguages.some(lang => lang.code === savedLanguage)) {
-      return savedLanguage;
-    }
-    // محاولة الكشف عن لغة المستعرض
-    const browserLang = navigator.language.split('-')[0];
-    return supportedLanguages.some(lang => lang.code === browserLang) ? browserLang : 'en';
+    // Get saved language from localStorage or default to English
+    return localStorage.getItem('language') || 'en';
   });
 
-  // الحصول على معلومات اللغة الحالية
-  const getCurrentLanguage = () => {
-    return supportedLanguages.find(lang => lang.code === language) || supportedLanguages[0];
+  // Toggle between Arabic and English
+  const toggleLanguage = () => {
+    const newLanguage = language === 'ar' ? 'en' : 'ar';
+    setLanguage(newLanguage);
+    localStorage.setItem('language', newLanguage);
   };
 
-  // تغيير اتجاه الصفحة بناءً على اللغة (RTL للعربية، LTR للإنجليزية)
+  // Set specific language
+  const setLanguageValue = (lang) => {
+    setLanguage(lang);
+    localStorage.setItem('language', lang);
+  };
+
+  // Update HTML dir attribute when language changes
   useEffect(() => {
-    const currentLang = getCurrentLanguage();
-    document.documentElement.dir = currentLang.dir;
-    document.documentElement.lang = currentLang.code;
-    document.body.classList.toggle('rtl', currentLang.dir === 'rtl');
-    localStorage.setItem('language', language);
+    document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    document.documentElement.lang = language;
   }, [language]);
 
-  // وظيفة تغيير اللغة
-  const changeLanguage = (langCode) => {
-    if (supportedLanguages.some(lang => lang.code === langCode)) {
-      setLanguage(langCode);
-    }
+  const value = {
+    language,
+    toggleLanguage,
+    setLanguage: setLanguageValue,
+    isArabic: language === 'ar',
+    isEnglish: language === 'en'
   };
 
-  // توفير قيم السياق للمكونات الفرعية
   return (
-    <LanguageContext.Provider 
-      value={{ 
-        language, 
-        changeLanguage, 
-        supportedLanguages,
-        getCurrentLanguage,
-        isRTL: getCurrentLanguage().dir === 'rtl'
-      }}
-    >
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   );
 };
 
-// هوك useLanguage لاستخدامه في المكونات
+// Custom hook to use language context
 export const useLanguage = () => {
   const context = useContext(LanguageContext);
+  
   if (!context) {
     throw new Error('useLanguage must be used within a LanguageProvider');
   }
+  
   return context;
 };
+
+export default LanguageContext;
 
 // لا نصدر هذا الملف كـ default لتجنب تضارب الاستيراد

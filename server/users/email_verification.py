@@ -37,7 +37,7 @@ def send_verification_email(user):
     )
     
     # Build verification URL
-    verification_url = f"{settings.SITE_URL}/api/users/verify-email/{verification.token}/"
+    verification_url = f"{settings.FRONTEND_URL}/verify-email?token={verification.token}&user_id={user.id}"
     
     # Prepare email content
     context = {

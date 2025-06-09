@@ -8,17 +8,20 @@ from django.urls import reverse
 import stripe
 import json
 import logging
+from django.utils import timezone
 
 # Import both models to support backward compatibility during transition
-try:
-    from alistpros_profiles.models import AListHomeProProfile
-    USE_NEW_MODEL = True
-except ImportError:
-    from contractors.models import ContractorProfile
-    USE_NEW_MODEL = False
+from alistpros_profiles.models import AListHomeProProfile
 
-from .models import Payment, AListHomeProStripeAccount
-from .serializers import PaymentSerializer, PaymentCreateSerializer, StripeAccountSerializer
+from .models import (
+    Payment, AListHomeProStripeAccount, 
+    EscrowAccount, EscrowWorkOrder, EscrowTransaction, EscrowStatus
+)
+from .serializers import (
+    PaymentSerializer, PaymentCreateSerializer, StripeAccountSerializer, 
+    EscrowAccountCreateSerializer, EscrowAccountSerializer, 
+    EscrowWorkOrderSerializer, CrewJobInvitationSerializer
+)
 from .utils import (
     create_stripe_account,
     generate_account_link,
@@ -27,7 +30,8 @@ from .utils import (
     get_stripe_dashboard_link,
     create_payment_session
 )
-from users.permissions import IsAListHomePro, IsClient, IsAdmin
+from users.permissions import IsAListHomePro, IsClient, IsAdmin, IsSpecialist, IsCrew
+from users.models import CustomUser as User
 
 logger = logging.getLogger(__name__)
 
@@ -381,3 +385,308 @@ def stripe_dashboard_link(request):
             'error': 'Server error',
             'message': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class EscrowAccountCreateView(APIView):
+    """
+    Create a new escrow account for secure project payments
+    """
+    permission_classes = [IsClient]
+    
+    def post(self, request):
+        serializer = EscrowAccountCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create escrow account
+        escrow_data = serializer.validated_data
+        specialist_id = escrow_data.pop('specialist_id', None)
+        
+        escrow = EscrowAccount.objects.create(
+            client=request.user,
+            specialist_id=specialist_id,
+            **escrow_data
+        )
+        
+        return Response({
+            'escrow_id': escrow.id,
+            'platform_fee': str(escrow.platform_fee),
+            'net_amount': str(escrow.net_amount),
+            'status': escrow.status
+        }, status=status.HTTP_201_CREATED)
+
+
+class EscrowAccountListView(generics.ListAPIView):
+    """
+    List escrow accounts for the authenticated user
+    """
+    serializer_class = EscrowAccountSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.role == 'client':
+            return EscrowAccount.objects.filter(client=user).order_by('-created_at')
+        elif user.role == 'specialist':
+            return EscrowAccount.objects.filter(specialist=user).order_by('-created_at')
+        elif user.role in ['contractor', 'crew']:
+            # Show escrows where they have work orders
+            return EscrowAccount.objects.filter(
+                work_orders__assigned_to=user
+            ).distinct().order_by('-created_at')
+        
+        return EscrowAccount.objects.none()
+
+
+class EscrowAccountDetailView(generics.RetrieveUpdateAPIView):
+    """
+    Retrieve and update escrow account details
+    """
+    serializer_class = EscrowAccountSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        if user.role == 'client':
+            return EscrowAccount.objects.filter(client=user)
+        elif user.role == 'specialist':
+            return EscrowAccount.objects.filter(specialist=user)
+        elif user.role in ['contractor', 'crew']:
+            return EscrowAccount.objects.filter(work_orders__assigned_to=user).distinct()
+        
+        return EscrowAccount.objects.none()
+
+
+class EscrowFundView(APIView):
+    """
+    Fund an escrow account using Stripe payment
+    """
+    permission_classes = [IsClient]
+    
+    def post(self, request, escrow_id):
+        try:
+            escrow = EscrowAccount.objects.get(id=escrow_id, client=request.user)
+        except EscrowAccount.DoesNotExist:
+            return Response({'error': 'Escrow account not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        if escrow.status != EscrowStatus.PENDING:
+            return Response({'error': 'Escrow account is not in pending status'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Create Stripe payment intent for escrow funding
+            payment_intent = stripe.PaymentIntent.create(
+                amount=int(escrow.total_amount * 100),  # Convert to cents
+                currency="usd",
+                description=f"Escrow funding for: {escrow.project_title}",
+                metadata={
+                    "escrow_id": str(escrow.id),
+                    "client_id": str(request.user.id),
+                }
+            )
+            
+            # Update escrow with payment intent
+            escrow.stripe_payment_intent_id = payment_intent.id
+            escrow.save()
+            
+            # Create transaction record
+            EscrowTransaction.objects.create(
+                escrow=escrow,
+                transaction_type='deposit',
+                amount=escrow.total_amount,
+                description=f"Client deposit for {escrow.project_title}",
+                stripe_transaction_id=payment_intent.id
+            )
+            
+            return Response({
+                'client_secret': payment_intent.client_secret,
+                'escrow_id': escrow.id
+            })
+            
+        except stripe.error.StripeError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class EscrowConfirmFundingView(APIView):
+    """
+    Confirm escrow funding after successful Stripe payment
+    """
+    permission_classes = [IsClient]
+    
+    def post(self, request, escrow_id):
+        try:
+            escrow = EscrowAccount.objects.get(id=escrow_id, client=request.user)
+        except EscrowAccount.DoesNotExist:
+            return Response({'error': 'Escrow account not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        # Verify payment with Stripe
+        if escrow.stripe_payment_intent_id:
+            try:
+                payment_intent = stripe.PaymentIntent.retrieve(escrow.stripe_payment_intent_id)
+                if payment_intent.status == 'succeeded':
+                    escrow.status = EscrowStatus.FUNDED
+                    escrow.funded_at = timezone.now()
+                    escrow.save()
+                    
+                    return Response({'status': 'funded'})
+                else:
+                    return Response({'error': 'Payment not yet completed'}, 
+                                  status=status.HTTP_400_BAD_REQUEST)
+            except stripe.error.StripeError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        return Response({'error': 'No payment intent found'}, 
+                      status=status.HTTP_400_BAD_REQUEST)
+
+
+class EscrowWorkOrderCreateView(APIView):
+    """
+    Create work orders within an escrow project (Specialist only)
+    """
+    permission_classes = [IsSpecialist]
+    
+    def post(self, request, escrow_id):
+        try:
+            escrow = EscrowAccount.objects.get(id=escrow_id, specialist=request.user)
+        except EscrowAccount.DoesNotExist:
+            return Response({'error': 'Escrow account not found or not managed by you'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        if escrow.status != EscrowStatus.FUNDED:
+            return Response({'error': 'Escrow must be funded before creating work orders'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer = EscrowWorkOrderSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate assigned_to user
+        assigned_to_id = request.data.get('assigned_to_id')
+        try:
+            assigned_user = User.objects.get(id=assigned_to_id)
+            if assigned_user.role not in ['contractor', 'crew']:
+                return Response({'error': 'Can only assign to contractors or crew'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            return Response({'error': 'Invalid assigned user'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create work order
+        work_order = EscrowWorkOrder.objects.create(
+            escrow=escrow,
+            assigned_to=assigned_user,
+            work_type=assigned_user.role,
+            **serializer.validated_data
+        )
+        
+        return Response(EscrowWorkOrderSerializer(work_order).data, 
+                       status=status.HTTP_201_CREATED)
+
+
+class CrewJobInvitationsView(generics.ListAPIView):
+    """
+    List available job invitations for crew members (Uber-style)
+    """
+    serializer_class = CrewJobInvitationSerializer
+    permission_classes = [IsCrew]
+    
+    def get_queryset(self):
+        return EscrowWorkOrder.objects.filter(
+            assigned_to=self.request.user,
+            status='pending'
+        ).select_related('escrow', 'escrow__client', 'escrow__specialist').order_by('-assigned_at')
+
+
+class CrewJobResponseView(APIView):
+    """
+    Accept or reject job invitations (Crew only)
+    """
+    permission_classes = [IsCrew]
+    
+    def post(self, request, work_order_id):
+        try:
+            work_order = EscrowWorkOrder.objects.get(
+                id=work_order_id, 
+                assigned_to=request.user,
+                status='pending'
+            )
+        except EscrowWorkOrder.DoesNotExist:
+            return Response({'error': 'Work order not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        action = request.data.get('action')  # 'accept' or 'reject'
+        
+        if action == 'accept':
+            work_order.status = 'accepted'
+            work_order.accepted_at = timezone.now()
+            work_order.save()
+            
+            # Update escrow status if this is the first accepted work order
+            if work_order.escrow.status == EscrowStatus.FUNDED:
+                work_order.escrow.status = EscrowStatus.IN_PROGRESS
+                work_order.escrow.work_started_at = timezone.now()
+                work_order.escrow.save()
+            
+            return Response({'status': 'accepted'})
+            
+        elif action == 'reject':
+            work_order.status = 'rejected'
+            work_order.save()
+            return Response({'status': 'rejected'})
+        
+        return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class EscrowApprovalView(APIView):
+    """
+    Client approval/dispute of completed work
+    """
+    permission_classes = [IsClient]
+    
+    def post(self, request, escrow_id):
+        try:
+            escrow = EscrowAccount.objects.get(id=escrow_id, client=request.user)
+        except EscrowAccount.DoesNotExist:
+            return Response({'error': 'Escrow account not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        action = request.data.get('action')  # 'approve' or 'dispute'
+        
+        if action == 'approve':
+            escrow.status = EscrowStatus.RELEASED
+            escrow.approved_at = timezone.now()
+            escrow.released_at = timezone.now()
+            escrow.save()
+            
+            # Process payment release to service providers
+            # This would integrate with Stripe transfers
+            
+            return Response({'status': 'approved_and_released'})
+            
+        elif action == 'dispute':
+            dispute_reason = request.data.get('dispute_reason', '')
+            escrow.status = EscrowStatus.DISPUTED
+            escrow.dispute_reason = dispute_reason
+            escrow.disputed_at = timezone.now()
+            escrow.save()
+            
+            return Response({'status': 'disputed'})
+        
+        return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class SpecialistEscrowManagementView(generics.ListAPIView):
+    """
+    Specialist view for managing escrow projects and coordinating work
+    """
+    serializer_class = EscrowAccountSerializer
+    permission_classes = [IsSpecialist]
+    
+    def get_queryset(self):
+        return EscrowAccount.objects.filter(
+            specialist=self.request.user
+        ).prefetch_related('work_orders', 'milestones').order_by('-created_at')

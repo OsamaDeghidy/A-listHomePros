@@ -75,14 +75,14 @@ const HeroSection = () => {
 
   // البيانات الاحتياطية
   const getFallbackServices = () => [
-    { id: 'plumbing', name: isArabic ? 'سباكة' : 'Plumbing' },
-    { id: 'electrical', name: isArabic ? 'كهرباء' : 'Electrical' },
-    { id: 'carpentry', name: isArabic ? 'نجارة' : 'Carpentry' },
-    { id: 'painting', name: isArabic ? 'طلاء' : 'Painting' },
-    { id: 'cleaning', name: isArabic ? 'تنظيف' : 'Cleaning' },
-    { id: 'furniture_moving', name: isArabic ? 'نقل أثاث' : 'Furniture Moving' },
-    { id: 'air_conditioning', name: isArabic ? 'تكييف' : 'Air Conditioning' },
-    { id: 'metalwork', name: isArabic ? 'أعمال معدنية' : 'Metalwork' }
+          { id: 'plumbing', name: isArabic ? 'سباكة' : 'Plumbing' },
+          { id: 'electrical', name: isArabic ? 'كهرباء' : 'Electrical' },
+          { id: 'carpentry', name: isArabic ? 'نجارة' : 'Carpentry' },
+          { id: 'painting', name: isArabic ? 'طلاء' : 'Painting' },
+          { id: 'cleaning', name: isArabic ? 'تنظيف' : 'Cleaning' },
+          { id: 'furniture_moving', name: isArabic ? 'نقل أثاث' : 'Furniture Moving' },
+          { id: 'air_conditioning', name: isArabic ? 'تكييف' : 'Air Conditioning' },
+          { id: 'metalwork', name: isArabic ? 'أعمال معدنية' : 'Metalwork' }
   ];
 
   const handleSearch = (e) => {

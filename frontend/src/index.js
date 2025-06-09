@@ -4,19 +4,16 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { AuthProvider } from './hooks/useAuth';
-import { LanguageProvider } from './hooks/useLanguage';
 import { NotificationProvider } from './context/NotificationContext';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <LanguageProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <App />
-        </NotificationProvider>
-      </AuthProvider>
-    </LanguageProvider>
+    <AuthProvider>
+      <NotificationProvider>
+        <App />
+      </NotificationProvider>
+    </AuthProvider>
   </React.StrictMode>
 );
 

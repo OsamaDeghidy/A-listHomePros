@@ -118,70 +118,70 @@ const PopularServices = () => {
 
   // البيانات الاحتياطية
   const getFallbackServices = () => [
-    {
+          {
       id: 'plumbing',
       name: isArabic ? 'سباكة' : 'Plumbing',
-      icon: '🔧',
+            icon: '🔧',
       description: isArabic ? 'خدمات سباكة احترافية لمنزلك' : 'Professional plumbing services for your home',
       image_url: getServiceImage('plumbing'),
-      service_count: 24
-    },
-    {
+            service_count: 24
+          },
+          {
       id: 'electrical',
       name: isArabic ? 'كهرباء' : 'Electrical',
-      icon: '⚡',
+            icon: '⚡',
       description: isArabic ? 'إصلاح وتركيب كهربائي متخصص' : 'Expert electrical repair and installation',
       image_url: getServiceImage('electrical'),
-      service_count: 19
-    },
-    {
+            service_count: 19
+          },
+          {
       id: 'cleaning',
       name: isArabic ? 'تنظيف منازل' : 'House Cleaning',
-      icon: '🧹',
+            icon: '🧹',
       description: isArabic ? 'اجعل مساحتك نظيفة مع خدمات التنظيف لدينا' : 'Keep your space spotless with our cleaning services',
       image_url: getServiceImage('cleaning'),
-      service_count: 31
-    },
-    {
+            service_count: 31
+          },
+          {
       id: 'carpentry',
       name: isArabic ? 'نجارة' : 'Carpentry',
-      icon: '🔨',
+            icon: '🔨',
       description: isArabic ? 'حلول نجارة وأثاث مخصصة' : 'Custom woodworking and furniture solutions',
       image_url: getServiceImage('carpentry'),
-      service_count: 15
-    },
-    {
+            service_count: 15
+          },
+          {
       id: 'painting',
       name: isArabic ? 'طلاء' : 'Painting',
-      icon: '🖌️',
+            icon: '🖌️',
       description: isArabic ? 'خدمات طلاء احترافية لأي سطح' : 'Professional painting services for any surface',
       image_url: getServiceImage('painting'),
-      service_count: 22
-    },
-    {
+            service_count: 22
+          },
+          {
       id: 'appliance_repair',
       name: isArabic ? 'إصلاح أجهزة' : 'Appliance Repair',
-      icon: '🔌',
+            icon: '🔌',
       description: isArabic ? 'إصلاح أجهزة المنزل بسرعة وكفاءة' : 'Fix your home appliances quickly and efficiently',
       image_url: getServiceImage('appliance_repair'),
-      service_count: 17
-    },
-    {
+            service_count: 17
+          },
+          {
       id: 'landscaping',
       name: isArabic ? 'تنسيق حدائق' : 'Gardening',
-      icon: '🌱',
+            icon: '🌱',
       description: isArabic ? 'خدمات تنسيق وصيانة الحدائق' : 'Landscaping and garden maintenance services',
       image_url: getServiceImage('landscaping'),
-      service_count: 13
-    },
-    {
+            service_count: 13
+          },
+          {
       id: 'moving_services',
       name: isArabic ? 'خدمات نقل' : 'Moving Services',
-      icon: '📦',
+            icon: '📦',
       description: isArabic ? 'مساعدة احترافية لاحتياجات النقل' : 'Professional help for your moving needs',
       image_url: getServiceImage('moving_services'),
-      service_count: 11
-    }
+            service_count: 11
+          }
   ];
 
   if (loading) {
