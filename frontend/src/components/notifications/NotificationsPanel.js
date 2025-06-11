@@ -1,25 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaBell, FaCheck, FaTrash, FaCheckDouble, FaCalendarCheck, FaComment, 
   FaCreditCard, FaStar, FaInfoCircle, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
-import { useTranslation } from 'react-i18next';
+import { useLanguage } from '../../hooks/useLanguage';
 import { format, formatDistance } from 'date-fns';
 import { enUS, arEG } from 'date-fns/locale';
 
 import useNotifications from '../../hooks/useNotifications';
 import { useOnClickOutside } from '../../hooks/useOnClickOutside';
-import { useUIState } from '../../hooks/useUIState';
 
 const NotificationsPanel = () => {
-  const { t, i18n } = useTranslation();
+  const { isArabic } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const panelRef = useRef();
-  const { isDarkMode, isRTL } = useUIState();
   
   const {
-    notifications,
-    unreadCount,
-    loading,
-    error,
     fetchNotifications,
     markAsRead,
     markAllAsRead,
@@ -76,7 +74,7 @@ const NotificationsPanel = () => {
   const formatNotificationTime = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
-    const locale = i18n.language === 'ar' ? arEG : enUS;
+    const locale = isArabic ? arEG : enUS;
     
     // إذا كان أقل من 24 ساعة، عرض "منذ X ساعات/دقائق"
     if (now - date < 24 * 60 * 60 * 1000) {
@@ -93,7 +91,7 @@ const NotificationsPanel = () => {
       <button
         onClick={handleTogglePanel}
         className="relative p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-        aria-label={t('notifications.button')}
+        aria-label={isArabic ? 'الإشعارات' : 'Notifications'}
       >
         <FaBell className="text-xl" />
         {unreadCount > 0 && (
@@ -106,32 +104,32 @@ const NotificationsPanel = () => {
       {/* لوحة الإشعارات */}
       {isOpen && (
         <div 
-          className={`absolute ${isRTL ? 'right-0' : 'left-0'} mt-2 w-80 md:w-96 max-h-[80vh] overflow-auto rounded-md shadow-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 z-50 transition-all duration-300 ease-in-out ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
+          className={`absolute ${isArabic ? 'right-0' : 'left-0'} mt-2 w-80 md:w-96 max-h-[80vh] overflow-auto rounded-md shadow-lg border border-gray-200 bg-white z-50 transition-all duration-300 ease-in-out`}
         >
           {/* رأس اللوحة */}
-          <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-semibold">{t('notifications.title')}</h3>
-            <div className="flex space-x-2 rtl:space-x-reverse">
+          <div className="flex justify-between items-center p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold">{isArabic ? 'الإشعارات' : 'Notifications'}</h3>
+            <div className={`flex space-x-2 ${isArabic ? 'space-x-reverse' : ''}`}>
               {unreadCount > 0 && (
                 <button 
                   onClick={markAllAsRead} 
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 p-1"
-                  title={t('notifications.markAllRead')}
+                  className="text-sm text-blue-600 hover:text-blue-800 p-1"
+                  title={isArabic ? 'تحديد الكل كمقروء' : 'Mark all as read'}
                 >
                   <FaCheckDouble className="text-lg" />
                 </button>
               )}
               <button 
                 onClick={deleteAllNotifications} 
-                className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 p-1"
-                title={t('notifications.clearAll')}
+                className="text-sm text-red-600 hover:text-red-800 p-1"
+                title={isArabic ? 'حذف الكل' : 'Clear all'}
               >
                 <FaTrash className="text-lg" />
               </button>
               <button 
                 onClick={() => setIsOpen(false)} 
-                className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 p-1"
-                title={t('common.close')}
+                className="text-sm text-gray-600 hover:text-gray-800 p-1"
+                title={isArabic ? 'إغلاق' : 'Close'}
               >
                 <FaTimes className="text-lg" />
               </button>
@@ -143,53 +141,53 @@ const NotificationsPanel = () => {
             {loading && (
               <div className="flex justify-center items-center p-4">
                 <div className="w-6 h-6 border-2 border-t-blue-600 border-r-transparent border-b-blue-600 border-l-transparent rounded-full animate-spin"></div>
-                <span className="ms-2">{t('common.loading')}</span>
+                <span className={`${isArabic ? 'mr-2' : 'ml-2'}`}>{isArabic ? 'جاري التحميل...' : 'Loading...'}</span>
               </div>
             )}
 
             {error && (
-              <div className="text-center p-4 text-red-600 dark:text-red-400">
+              <div className="text-center p-4 text-red-600">
                 <p>{error}</p>
                 <button 
                   onClick={fetchNotifications} 
-                  className="mt-2 text-blue-600 dark:text-blue-400 hover:underline"
+                  className="mt-2 text-blue-600 hover:underline"
                 >
-                  {t('common.retry')}
+                  {isArabic ? 'إعادة المحاولة' : 'Retry'}
                 </button>
               </div>
             )}
 
             {!loading && !error && notifications.length === 0 && (
-              <div className="text-center p-8 text-gray-500 dark:text-gray-400">
+              <div className="text-center p-8 text-gray-500">
                 <FaBell className="mx-auto text-4xl mb-2 opacity-30" />
-                <p>{t('notifications.empty')}</p>
+                <p>{isArabic ? 'لا توجد إشعارات' : 'No notifications'}</p>
               </div>
             )}
 
             {!loading && !error && notifications.length > 0 && (
-              <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+              <ul className="divide-y divide-gray-200">
                 {notifications.map((notification) => (
                   <li 
                     key={notification.id}
-                    className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer ${!notification.isRead ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                    className={`p-4 hover:bg-gray-50 transition-colors cursor-pointer ${!notification.isRead ? 'bg-blue-50' : ''}`}
                     onClick={() => handleNotificationClick(notification)}
                   >
                     <div className="flex items-start">
                       <div className="flex-shrink-0 mt-1">
                         {getNotificationIcon(notification.type)}
                       </div>
-                      <div className="ms-3 flex-grow">
-                        <p className="font-medium text-gray-900 dark:text-white">
+                      <div className={`${isArabic ? 'mr-3' : 'ml-3'} flex-grow`}>
+                        <p className="font-medium text-gray-900">
                           {notification.title}
                         </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                        <p className="text-sm text-gray-600 mt-1">
                           {notification.message}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        <p className="text-xs text-gray-500 mt-1">
                           {formatNotificationTime(notification.createdAt)}
                         </p>
                       </div>
-                      <div className="flex-shrink-0 flex items-start space-x-2 rtl:space-x-reverse">
+                      <div className={`flex-shrink-0 flex items-start space-x-2 ${isArabic ? 'space-x-reverse' : ''}`}>
                         {!notification.isRead && (
                           <button
                             onClick={(e) => {
@@ -197,7 +195,7 @@ const NotificationsPanel = () => {
                               markAsRead(notification.id);
                             }}
                             className="text-blue-500 hover:text-blue-700 p-1"
-                            title={t('notifications.markRead')}
+                            title={isArabic ? 'تحديد كمقروء' : 'Mark as read'}
                           >
                             <FaCheck className="text-xs" />
                           </button>
@@ -208,7 +206,7 @@ const NotificationsPanel = () => {
                             deleteNotification(notification.id);
                           }}
                           className="text-red-500 hover:text-red-700 p-1"
-                          title={t('notifications.delete')}
+                          title={isArabic ? 'حذف' : 'Delete'}
                         >
                           <FaTrash className="text-xs" />
                         </button>
