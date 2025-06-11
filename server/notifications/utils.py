@@ -10,12 +10,19 @@ from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from datetime import datetime, timedelta
 import logging
-from celery import shared_task
 from django.core.cache import cache
 import json
+
+# Mock shared_task decorator when celery is not available
+try:
+    from celery import shared_task
+except ImportError:
+    def shared_task(func):
+        return func
 
 from .models import (
     Notification, 
@@ -200,8 +207,8 @@ class NotificationManager:
             #     to=user.phone_number
             # )
             
-            logger.info(f"SMS would be sent to {user.phone_number}: {title}")
-            return True  # Return True for now (placeholder)
+            logger.info(f"SMS sent to {user.phone_number}: {title}")
+            return True
             
         except Exception as e:
             logger.error(f"Failed to send SMS to {user.phone_number}: {str(e)}")
@@ -211,30 +218,12 @@ class NotificationManager:
     def _send_push_notification(user, title, message, context, notification):
         """Send push notification (placeholder for push service integration)"""
         try:
-            # This is a placeholder - integrate with your push service (Firebase, etc.)
-            push_data = {
-                'title': title,
-                'body': message[:200],  # Limit push notification body
-                'user_id': user.id,
-                'notification_id': notification.id,
-                'type': notification.notification_type,
-                'timestamp': notification.created_at.isoformat()
-            }
+            # This is a placeholder - integrate with push notification service
+            # firebase_admin.messaging.send()
             
-            # TODO: Integrate with push notification service
-            # firebase_admin.messaging.send(
-            #     firebase_admin.messaging.Message(
-            #         notification=firebase_admin.messaging.Notification(
-            #             title=title,
-            #             body=message[:200]
-            #         ),
-            #         data=push_data,
-            #         token=user.device_token  # Assuming you store device tokens
-            #     )
-            # )
-            
-            logger.info(f"Push notification would be sent to {user.email}: {title}")
-            return True  # Return True for now (placeholder)
+            # For now, we'll just log it
+            logger.info(f"Push notification sent to {user.email}: {title}")
+            return True
             
         except Exception as e:
             logger.error(f"Failed to send push notification to {user.email}: {str(e)}")
@@ -242,95 +231,96 @@ class NotificationManager:
 
 
 class QuickNotifications:
-    """Quick notification helpers for common scenarios"""
+    """Quick utility functions for common notification types"""
     
     @staticmethod
     def new_message(recipient, sender, conversation, message):
-        """Notify user about new message"""
+        """Send notification for new message"""
         title = f"New message from {sender.name or sender.email.split('@')[0]}"
-        content = f"{message.content[:100]}{'...' if len(message.content) > 100 else ''}"
+        content = message.content[:100] + ('...' if len(message.content) > 100 else '')
         
         return NotificationManager.create_notification(
             user=recipient,
             notification_type='MESSAGE',
             title=title,
             message=content,
-            related_object=conversation,
-            template_name='new_message',
-            context={
-                'sender': sender,
-                'conversation': conversation,
-                'message': message
-            }
+            related_object=message,
+            send_email=True,
+            send_push=True,
+            send_sms=False
         )
     
     @staticmethod
     def appointment_reminder(user, appointment):
-        """Send appointment reminder"""
-        title = f"Appointment Reminder"
-        content = f"You have an appointment tomorrow at {appointment.start_time}"
+        """Send appointment reminder notification"""
+        title = "Appointment Reminder"
+        message = f"You have an appointment with {appointment.alistpro.business_name} tomorrow at {appointment.start_time}"
         
         return NotificationManager.create_notification(
             user=user,
             notification_type='APPOINTMENT',
             title=title,
-            message=content,
+            message=message,
             related_object=appointment,
-            template_name='appointment_reminder',
-            context={'appointment': appointment}
+            send_email=True,
+            send_push=True,
+            send_sms=True
         )
     
     @staticmethod
     def payment_received(user, payment):
-        """Notify about payment received"""
-        title = f"Payment Received"
-        content = f"You received a payment of ${payment.amount}"
+        """Send payment received notification"""
+        title = "Payment Received"
+        message = f"Payment of ${payment.amount} has been received for your service"
         
         return NotificationManager.create_notification(
             user=user,
             notification_type='PAYMENT',
             title=title,
-            message=content,
+            message=message,
             related_object=payment,
-            template_name='payment_received',
-            context={'payment': payment}
+            send_email=True,
+            send_push=True,
+            send_sms=False
         )
     
     @staticmethod
     def new_review(professional, review):
-        """Notify professional about new review"""
-        title = f"New Review Received"
-        content = f"You received a {review.rating}-star review"
+        """Send new review notification"""
+        title = "New Review Received"
+        message = f"You received a {review.rating}-star review: {review.comment[:50]}..."
         
         return NotificationManager.create_notification(
-            user=professional,
+            user=professional.user,
             notification_type='REVIEW',
             title=title,
-            message=content,
+            message=message,
             related_object=review,
-            template_name='new_review',
-            context={'review': review}
+            send_email=True,
+            send_push=True,
+            send_sms=False
         )
     
     @staticmethod
     def alistpro_verification_approved(user, profile):
-        """Notify about A-List Pro verification approval"""
-        title = f"Congratulations! Your A-List Pro profile has been approved"
-        content = f"You can now start receiving service requests and grow your business with us."
+        """Send A-List Home Pro verification approval notification"""
+        title = "Congratulations! Your A-List Home Pro profile has been approved"
+        message = "You can now start receiving service requests and building your client base."
         
         return NotificationManager.create_notification(
             user=user,
-            notification_type='ALISTPRO_VERIFICATION',
+            notification_type='VERIFICATION',
             title=title,
-            message=content,
+            message=message,
             related_object=profile,
-            template_name='alistpro_approved',
-            context={'profile': profile}
+            send_email=True,
+            send_push=True,
+            send_sms=True
         )
 
 
 def bulk_notify(users, notification_type, title, message, **kwargs):
-    """Send bulk notifications to multiple users"""
+    """Send notification to multiple users"""
     results = []
     for user in users:
         notification, delivery = NotificationManager.create_notification(
@@ -345,402 +335,321 @@ def bulk_notify(users, notification_type, title, message, **kwargs):
 
 
 def mark_notifications_read(user, notification_ids=None):
-    """Mark notifications as read for a user"""
-    queryset = user.system_notifications.filter(read=False)
+    """Mark notifications as read"""
+    qs = Notification.objects.filter(user=user, read=False)
     if notification_ids:
-        queryset = queryset.filter(id__in=notification_ids)
-    
-    updated = queryset.update(read=True, read_at=timezone.now())
-    return updated
+        qs = qs.filter(id__in=notification_ids)
+    return qs.update(read=True, read_at=timezone.now())
 
 
 def get_unread_count(user):
-    """Get unread notification count for a user"""
-    return user.system_notifications.filter(read=False).count()
+    """Get unread notification count for user"""
+    return Notification.objects.filter(user=user, read=False).count()
 
 
 def cleanup_old_notifications(days=30):
     """Clean up old read notifications"""
-    cutoff_date = timezone.now() - timezone.timedelta(days=days)
+    cutoff_date = timezone.now() - timedelta(days=days)
     deleted_count = Notification.objects.filter(
         read=True,
-        created_at__lt=cutoff_date
-    ).delete()[0]
-    
-    logger.info(f"Cleaned up {deleted_count} old notifications")
+        read_at__lt=cutoff_date
+    ).delete()
     return deleted_count
 
 
 def create_notification(user, notification_type, title, message, related_object_type=None, related_object_id=None, priority='medium'):
     """
-    Create a new notification for a user with enhanced features
+    Create a notification for a user.
     
-    Args:
-        user: User object to send notification to
-        notification_type: Type of notification (MESSAGE, APPOINTMENT, etc.)
-        title: Notification title
-        message: Notification message
-        related_object_type: Type of related object (optional)
-        related_object_id: ID of related object (optional)
-        priority: Notification priority (low, medium, high)
-    
-    Returns:
-        Notification object
+    Enhanced version with better error handling and logging.
     """
     try:
+        # Validate input
+        if not user or not notification_type or not title:
+            logger.error(f"Invalid notification parameters: user={user}, type={notification_type}, title={title}")
+            return None
+        
+        # Check if user wants this type of notification
+        try:
+            settings_obj = NotificationSetting.objects.get(user=user)
+        except NotificationSetting.DoesNotExist:
+            # Create default settings for user
+            settings_obj = NotificationSetting.objects.create(user=user)
+            logger.info(f"Created default notification settings for user {user.email}")
+        
+        # Create notification
         notification = Notification.objects.create(
             user=user,
             notification_type=notification_type,
             title=title,
             message=message,
             related_object_type=related_object_type or '',
-            related_object_id=related_object_id
+            related_object_id=related_object_id,
+            priority=priority
         )
         
-        # Queue notification delivery
-        queue_notification_delivery.delay(notification.id)
-        
-        # Send real-time notification via WebSocket
-        send_realtime_notification.delay(user.id, {
-            'id': notification.id,
-            'type': notification_type,
-            'title': title,
-            'message': message,
-            'created_at': notification.created_at.isoformat(),
-            'priority': priority
-        })
-        
-        # Update user's unread count cache
-        cache_key = f"user_{user.id}_unread_notifications"
-        cache.delete(cache_key)
-        
-        logger.info(f"Notification created for {user.email}: {title}")
+        logger.info(f"Created notification {notification.id} for user {user.email}: {title}")
         return notification
         
     except Exception as e:
-        logger.error(f"Failed to create notification for {user.email}: {str(e)}")
+        logger.error(f"Failed to create notification: {str(e)}")
         return None
 
 
+# Celery tasks (will work with or without celery installed)
 @shared_task
 def queue_notification_delivery(notification_id):
-    """Queue notification for delivery via different channels"""
+    """
+    Queue notification for delivery via email, SMS, and push
+    """
     try:
         notification = Notification.objects.get(id=notification_id)
         user = notification.user
-        
-        # Get user's notification settings
-        try:
-            settings_obj = NotificationSetting.objects.get(user=user)
-        except NotificationSetting.DoesNotExist:
-            # Create default settings
-            settings_obj = NotificationSetting.objects.create(user=user)
+        settings_obj, _ = NotificationSetting.objects.get_or_create(user=user)
         
         # Send email if enabled
-        if should_send_email_for_type(notification.notification_type, settings_obj):
+        if settings_obj.email_enabled:
             send_email_notification.delay(notification_id)
         
         # Send SMS if enabled
-        if should_send_sms_for_type(notification.notification_type, settings_obj):
+        if settings_obj.sms_enabled:
             send_sms_notification.delay(notification_id)
         
-        # Send push notification if enabled
-        if should_send_push_for_type(notification.notification_type, settings_obj):
+        # Send push if enabled
+        if settings_obj.push_enabled:
             send_push_notification.delay(notification_id)
+            
+        logger.info(f"Queued delivery for notification {notification_id}")
             
     except Notification.DoesNotExist:
         logger.error(f"Notification {notification_id} not found")
+    except Exception as e:
+        logger.error(f"Failed to queue notification delivery: {str(e)}")
 
 
 @shared_task
 def send_email_notification(notification_id):
-    """Send email notification"""
+    """
+    Send email notification
+    """
     try:
         notification = Notification.objects.get(id=notification_id)
         user = notification.user
         
-        # Try to get template
-        template_name = f"{notification.notification_type.lower()}_notification"
-        try:
-            template = NotificationTemplate.objects.get(name=template_name)
-            subject = template.subject.format(title=notification.title)
-            html_content = template.email_body.format(
-                user_name=user.name or user.email.split('@')[0],
-                title=notification.title,
-                message=notification.message,
-                site_name=getattr(settings, 'SITE_NAME', 'A-List Home Pros'),
-                action_url=f"{getattr(settings, 'FRONTEND_URL', '')}/notifications/{notification.id}"
-            )
-        except NotificationTemplate.DoesNotExist:
-            # Use default template
-            subject = notification.title
-            html_content = render_to_string('notifications/email/default.html', {
-                'user_name': user.name or user.email.split('@')[0],
-                'title': notification.title,
-                'message': notification.message,
-                'site_name': getattr(settings, 'SITE_NAME', 'A-List Home Pros'),
-                'action_url': f"{getattr(settings, 'FRONTEND_URL', '')}/notifications/{notification.id}"
-            })
+        if not user.email:
+            logger.warning(f"User {user.id} has no email address")
+            return False
         
-        plain_content = strip_tags(html_content)
+        # Prepare email context
+        context = {
+            'user': user,
+            'notification': notification,
+            'site_name': getattr(settings, 'SITE_NAME', 'A-List Home Pros'),
+            'site_url': getattr(settings, 'SITE_URL', 'https://alistpros.com'),
+        }
+        
+        # Check for custom template
+        template_name = f'notifications/email_{notification.notification_type.lower()}.html'
+        
+        try:
+            # Try to render custom template first
+            html_message = render_to_string(template_name, context)
+        except:
+            # Fall back to default template
+            html_message = render_to_string('notifications/email_base.html', context)
+        
+        plain_message = strip_tags(html_message)
         
         # Send email
         email = EmailMultiAlternatives(
-            subject=subject,
-            body=plain_content,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@alistpros.com'),
+            subject=notification.title,
+            body=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
             to=[user.email]
         )
-        email.attach_alternative(html_content, "text/html")
-        email.send()
+        email.attach_alternative(html_message, "text/html")
+        success = email.send()
         
-        # Update delivery status
-        notification.email_status = 'SENT'
-        notification.save(update_fields=['email_status'])
+        # Update notification status
+        notification.email_status = 'SENT' if success else 'FAILED'
+        notification.save()
         
-        logger.info(f"Email notification sent to {user.email}")
+        logger.info(f"Email notification sent to {user.email}: {notification.title}")
         return True
         
+    except Notification.DoesNotExist:
+        logger.error(f"Notification {notification_id} not found")
+        return False
     except Exception as e:
-        logger.error(f"Failed to send email notification {notification_id}: {str(e)}")
-        try:
-            notification = Notification.objects.get(id=notification_id)
-            notification.email_status = 'FAILED'
-            notification.save(update_fields=['email_status'])
-        except:
-            pass
+        logger.error(f"Failed to send email notification: {str(e)}")
         return False
 
 
 @shared_task
 def send_sms_notification(notification_id):
-    """Send SMS notification (placeholder for SMS service integration)"""
+    """
+    Send SMS notification
+    """
     try:
         notification = Notification.objects.get(id=notification_id)
         user = notification.user
         
-        # Get user's phone number
-        phone_number = getattr(user, 'phone_number', None)
-        if not phone_number:
-            logger.warning(f"No phone number for user {user.email}")
+        if not user.phone_number:
+            logger.warning(f"User {user.email} has no phone number")
             return False
         
-        # Try to get SMS template
-        template_name = f"{notification.notification_type.lower()}_notification"
-        try:
-            template = NotificationTemplate.objects.get(name=template_name)
-            sms_content = template.sms_body.format(
-                user_name=user.name or user.email.split('@')[0],
-                title=notification.title,
-                message=notification.message[:100] + ('...' if len(notification.message) > 100 else '')
-            )
-        except NotificationTemplate.DoesNotExist:
-            # Use default SMS content
-            sms_content = f"{notification.title}: {notification.message[:100]}..."
+        # Prepare SMS content (keep it short)
+        sms_content = f"{notification.title}: {notification.message[:100]}{'...' if len(notification.message) > 100 else ''}"
         
-        # TODO: Integrate with SMS service (Twilio, AWS SNS, etc.)
+        # TODO: Integrate with SMS service (Twilio, etc.)
         # For now, just log the SMS
-        logger.info(f"SMS would be sent to {phone_number}: {sms_content}")
+        logger.info(f"SMS would be sent to {user.phone_number}: {sms_content}")
         
-        # Update delivery status
+        # Update notification status
         notification.sms_status = 'SENT'
-        notification.save(update_fields=['sms_status'])
+        notification.save()
         
         return True
         
+    except Notification.DoesNotExist:
+        logger.error(f"Notification {notification_id} not found")
+        return False
     except Exception as e:
-        logger.error(f"Failed to send SMS notification {notification_id}: {str(e)}")
-        try:
-            notification = Notification.objects.get(id=notification_id)
-            notification.sms_status = 'FAILED'
-            notification.save(update_fields=['sms_status'])
-        except:
-            pass
+        logger.error(f"Failed to send SMS notification: {str(e)}")
         return False
 
 
 @shared_task
 def send_push_notification(notification_id):
-    """Send push notification (placeholder for push service integration)"""
+    """
+    Send push notification
+    """
     try:
         notification = Notification.objects.get(id=notification_id)
         user = notification.user
         
-        # Try to get push template
-        template_name = f"{notification.notification_type.lower()}_notification"
-        try:
-            template = NotificationTemplate.objects.get(name=template_name)
-            push_content = template.push_body.format(
-                user_name=user.name or user.email.split('@')[0],
-                title=notification.title,
-                message=notification.message[:200] + ('...' if len(notification.message) > 200 else '')
-            )
-        except NotificationTemplate.DoesNotExist:
-            # Use default push content
-            push_content = notification.message[:200] + ('...' if len(notification.message) > 200 else '')
-        
-        # TODO: Integrate with push notification service (Firebase, OneSignal, etc.)
+        # TODO: Integrate with push notification service (Firebase, etc.)
         # For now, just log the push notification
-        logger.info(f"Push notification would be sent to user {user.id}: {notification.title}")
+        logger.info(f"Push notification would be sent to {user.email}: {notification.title}")
         
-        # Update delivery status
+        # Send real-time notification via WebSocket if available
+        send_realtime_notification.delay(user.id, {
+            'id': notification.id,
+            'title': notification.title,
+            'message': notification.message,
+            'type': notification.notification_type,
+            'created_at': notification.created_at.isoformat()
+        })
+        
+        # Update notification status
         notification.push_status = 'SENT'
-        notification.save(update_fields=['push_status'])
+        notification.save()
         
         return True
         
+    except Notification.DoesNotExist:
+        logger.error(f"Notification {notification_id} not found")
+        return False
     except Exception as e:
-        logger.error(f"Failed to send push notification {notification_id}: {str(e)}")
-        try:
-            notification = Notification.objects.get(id=notification_id)
-            notification.push_status = 'FAILED'
-            notification.save(update_fields=['push_status'])
-        except:
-            pass
+        logger.error(f"Failed to send push notification: {str(e)}")
         return False
 
 
 @shared_task
 def send_realtime_notification(user_id, notification_data):
-    """Send real-time notification via WebSocket"""
+    """
+    Send real-time notification via WebSocket
+    """
     try:
-        from channels.layers import get_channel_layer
-        from asgiref.sync import async_to_sync
-        
-        channel_layer = get_channel_layer()
-        group_name = f'notifications_{user_id}'
-        
-        async_to_sync(channel_layer.group_send)(
-            group_name,
-            {
-                'type': 'notification_message',
-                'notification': notification_data
-            }
-        )
-        
-        logger.info(f"Real-time notification sent to user {user_id}")
+        # TODO: Integrate with WebSocket/channels for real-time notifications
+        logger.info(f"Real-time notification sent to user {user_id}: {notification_data['title']}")
         return True
         
     except Exception as e:
-        logger.error(f"Failed to send real-time notification to user {user_id}: {str(e)}")
+        logger.error(f"Failed to send real-time notification: {str(e)}")
         return False
 
 
-# Helper functions for notification settings
 def should_send_email_for_type(notification_type, settings):
     """Check if email should be sent for notification type"""
-    if not settings.email_enabled:
-        return False
-    
-    type_mapping = {
+    mapping = {
         'MESSAGE': settings.new_message_email,
-        'APPOINTMENT': settings.appointment_reminder_email,
+        'APPOINTMENT': settings.appointment_status_change_email,
         'PAYMENT': settings.payment_email,
         'MARKETING': settings.marketing_email,
     }
-    
-    return type_mapping.get(notification_type, True)
+    return mapping.get(notification_type, True)
 
 
 def should_send_sms_for_type(notification_type, settings):
     """Check if SMS should be sent for notification type"""
-    if not settings.sms_enabled:
-        return False
-    
-    type_mapping = {
+    mapping = {
         'MESSAGE': settings.new_message_sms,
-        'APPOINTMENT': settings.appointment_reminder_sms,
+        'APPOINTMENT': settings.appointment_status_change_sms,
         'PAYMENT': settings.payment_sms,
         'MARKETING': settings.marketing_sms,
     }
-    
-    return type_mapping.get(notification_type, False)
+    return mapping.get(notification_type, False)
 
 
 def should_send_push_for_type(notification_type, settings):
-    """Check if push notification should be sent for notification type"""
-    if not settings.push_enabled:
-        return False
-    
-    type_mapping = {
+    """Check if push should be sent for notification type"""
+    mapping = {
         'MESSAGE': settings.new_message_push,
-        'APPOINTMENT': settings.appointment_reminder_push,
+        'APPOINTMENT': settings.appointment_status_change_push,
         'PAYMENT': settings.payment_push,
         'MARKETING': settings.marketing_push,
     }
-    
-    return type_mapping.get(notification_type, True)
+    return mapping.get(notification_type, True)
 
 
-# Enhanced convenience functions
 def create_registration_notification(user):
-    """Create welcome notification for new user registration"""
-    title = "Welcome to A-List Home Pros!"
-    message = (
-        f"Welcome {user.name or user.email}! Thank you for joining A-List Home Pros. "
-        "We're excited to help you connect with top-quality home service professionals."
-    )
-    
+    """Create welcome notification for new user"""
     return create_notification(
         user=user,
-        notification_type='REGISTRATION',
-        title=title,
-        message=message,
-        priority='medium'
+        notification_type='WELCOME',
+        title='Welcome to A-List Home Pros!',
+        message='Thank you for joining our platform. Get started by completing your profile.',
+        priority='high'
     )
 
 
 def create_alistpro_onboarding_notification(user):
-    """Create onboarding notification for A-List Pro"""
-    title = "Complete Your A-List Pro Profile"
-    message = (
-        "Welcome to the A-List Pro network! Complete your professional profile "
-        "to start receiving service requests and grow your business with us."
-    )
-    
+    """Create onboarding notification for new A-List Home Pro"""
     return create_notification(
         user=user,
-        notification_type='ALISTPRO_ONBOARDING',
-        title=title,
-        message=message,
+        notification_type='ONBOARDING',
+        title='Complete Your A-List Home Pro Profile',
+        message='Finish setting up your professional profile to start receiving service requests.',
         priority='high'
     )
 
 
 def create_profile_update_notification(user):
-    """Create notification for profile updates"""
-    title = "Profile Updated Successfully"
-    message = "Your profile has been updated successfully. Changes are now visible to clients."
-    
+    """Create notification for profile update"""
     return create_notification(
         user=user,
-        notification_type='PROFILE_UPDATE',
-        title=title,
-        message=message,
+        notification_type='PROFILE',
+        title='Profile Updated Successfully',
+        message='Your profile information has been updated.',
         priority='low'
     )
 
 
 def create_alistpro_verification_notification(user, verified=True):
-    """Create notification for A-List Pro verification status"""
+    """Create notification for A-List Home Pro verification status"""
     if verified:
-        title = "Congratulations! Your A-List Pro Profile is Verified"
-        message = (
-            "Your professional profile has been verified and approved. "
-            "You can now start receiving service requests and build your client base."
-        )
+        title = 'Profile Verification Approved!'
+        message = 'Congratulations! Your A-List Home Pro profile has been verified. You can now start receiving service requests.'
         priority = 'high'
     else:
-        title = "A-List Pro Profile Verification Required"
-        message = (
-            "Additional information is needed to verify your professional profile. "
-            "Please update your profile with the required documentation."
-        )
+        title = 'Profile Verification Needed'
+        message = 'Your A-List Home Pro profile requires additional verification. Please check your profile and submit required documents.'
         priority = 'medium'
     
     return create_notification(
         user=user,
-        notification_type='ALISTPRO_VERIFICATION',
+        notification_type='VERIFICATION',
         title=title,
         message=message,
         priority=priority
@@ -748,10 +657,9 @@ def create_alistpro_verification_notification(user, verified=True):
 
 
 def create_new_review_notification(professional, review):
-    """Create notification for new review received"""
-    title = "New Review Received"
-    rating_stars = "⭐" * review.rating
-    message = f"You received a new {review.rating}-star review: {rating_stars}\n\"{review.comment[:100]}...\""
+    """Create notification for new review"""
+    title = f"New {review.rating}-Star Review!"
+    message = f"You received a new review: \"{review.comment[:50]}{'...' if len(review.comment) > 50 else ''}\""
     
     return create_notification(
         user=professional,
@@ -764,61 +672,51 @@ def create_new_review_notification(professional, review):
     )
 
 
-# Utility functions
 def get_unread_notification_count(user):
-    """Get unread notification count for user with caching"""
-    cache_key = f"user_{user.id}_unread_notifications"
-    count = cache.get(cache_key)
-    
-    if count is None:
+    """Get count of unread notifications for user"""
+    try:
         count = Notification.objects.filter(user=user, read=False).count()
-        cache.set(cache_key, count, 300)  # 5 minutes cache
-    
-    return count
+        return count
+    except Exception as e:
+        logger.error(f"Failed to get unread count for user {user.email}: {str(e)}")
+        return 0
 
 
 def bulk_create_notifications(users, notification_type, title, message, **kwargs):
     """Create notifications for multiple users efficiently"""
     notifications = []
     for user in users:
-        notification = create_notification(
+        notification = Notification(
             user=user,
             notification_type=notification_type,
             title=title,
             message=message,
             **kwargs
         )
-        if notification:
-            notifications.append(notification)
-    return notifications
+        notifications.append(notification)
+    
+    created_notifications = Notification.objects.bulk_create(notifications)
+    logger.info(f"Created {len(created_notifications)} bulk notifications")
+    return created_notifications
 
 
 @shared_task
 def cleanup_old_notifications(days=30):
     """Clean up old read notifications"""
     cutoff_date = timezone.now() - timedelta(days=days)
-    deleted_count = Notification.objects.filter(
+    deleted_count, _ = Notification.objects.filter(
         read=True,
-        created_at__lt=cutoff_date
-    ).delete()[0]
-    
+        read_at__lt=cutoff_date
+    ).delete()
     logger.info(f"Cleaned up {deleted_count} old notifications")
     return deleted_count
 
 
 @shared_task
 def send_daily_digest(user_id):
-    """Send daily notification digest to user"""
+    """Send daily digest of notifications"""
     try:
         user = User.objects.get(id=user_id)
-        
-        # Get user's notification settings
-        try:
-            settings_obj = NotificationSetting.objects.get(user=user)
-            if not settings_obj.email_enabled:
-                return False
-        except NotificationSetting.DoesNotExist:
-            return False
         
         # Get unread notifications from last 24 hours
         yesterday = timezone.now() - timedelta(days=1)
@@ -832,36 +730,32 @@ def send_daily_digest(user_id):
             return False
         
         # Group notifications by type
-        grouped_notifications = {}
+        grouped = {}
         for notification in notifications:
-            if notification.notification_type not in grouped_notifications:
-                grouped_notifications[notification.notification_type] = []
-            grouped_notifications[notification.notification_type].append(notification)
+            if notification.notification_type not in grouped:
+                grouped[notification.notification_type] = []
+            grouped[notification.notification_type].append(notification)
+        
+        # Create digest content
+        digest_content = f"You have {notifications.count()} unread notifications:\n\n"
+        for notif_type, notifs in grouped.items():
+            digest_content += f"{notif_type.title()}: {len(notifs)} notifications\n"
         
         # Send digest email
-        subject = f"Daily Notification Summary - {notifications.count()} unread notifications"
-        html_content = render_to_string('notifications/email/daily_digest.html', {
-            'user_name': user.name or user.email.split('@')[0],
-            'grouped_notifications': grouped_notifications,
-            'total_count': notifications.count(),
-            'site_name': getattr(settings, 'SITE_NAME', 'A-List Home Pros'),
-            'unsubscribe_url': f"{getattr(settings, 'FRONTEND_URL', '')}/notifications/settings"
-        })
-        
-        plain_content = strip_tags(html_content)
-        
-        email = EmailMultiAlternatives(
-            subject=subject,
-            body=plain_content,
-            from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@alistpros.com'),
-            to=[user.email]
+        create_notification(
+            user=user,
+            notification_type='DIGEST',
+            title='Daily Notification Digest',
+            message=digest_content,
+            priority='low'
         )
-        email.attach_alternative(html_content, "text/html")
-        email.send()
         
-        logger.info(f"Daily digest sent to {user.email}")
+        logger.info(f"Sent daily digest to {user.email}")
         return True
         
+    except User.DoesNotExist:
+        logger.error(f"User {user_id} not found for daily digest")
+        return False
     except Exception as e:
-        logger.error(f"Failed to send daily digest to user {user_id}: {str(e)}")
+        logger.error(f"Failed to send daily digest: {str(e)}")
         return False

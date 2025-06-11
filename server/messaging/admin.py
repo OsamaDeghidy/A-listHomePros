@@ -27,12 +27,19 @@ class MessageInline(admin.TabularInline):
     """Inline for recent messages"""
     model = Message
     extra = 0
-    readonly_fields = ['created_at', 'updated_at', 'reaction_count', 'read_count']
+    readonly_fields = ['created_at', 'updated_at', 'reaction_count', 'read_count', 'content_preview']
     fields = ['sender', 'content_preview', 'message_type', 'created_at', 'reaction_count', 'read_count']
     ordering = ['-created_at']
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('sender').prefetch_related('reactions', 'read_by')[:10]
+        # Fix: Get the queryset first, then apply select_related and prefetch_related, then slice
+        qs = super().get_queryset(request)
+        qs = qs.select_related('sender').prefetch_related('reactions', 'read_by')
+        qs = qs.order_by('-created_at')
+        return qs
+    
+    def has_add_permission(self, request, obj=None):
+        return False  # Disable adding through inline to show only recent messages
     
     def content_preview(self, obj):
         if obj.message_type == 'TEXT':
@@ -120,10 +127,11 @@ class ConversationAdmin(admin.ModelAdmin):
             icon = '👥' if obj.is_group else '💬'
             return format_html('{} {}', icon, obj.title)
         else:
-            participants = obj.participants.all()[:3]
+            participants = list(obj.participants.all()[:3])
             names = [p.name or p.email.split('@')[0] for p in participants]
-            if obj.participants.count() > 3:
-                title = f"{', '.join(names)} and {obj.participants.count() - 3} others"
+            participant_count = obj.participants.count()
+            if participant_count > 3:
+                title = f"{', '.join(names)} and {participant_count - 3} others"
             else:
                 title = ', '.join(names)
             return format_html('💬 {}', title)
@@ -185,7 +193,7 @@ class ConversationAdmin(admin.ModelAdmin):
     status_flags.short_description = 'Status'
     
     def participant_list(self, obj):
-        participants = obj.participants.all()
+        participants = list(obj.participants.all())
         participant_html = []
         for participant in participants:
             admin_badge = '👑' if participant == obj.admin else ''
@@ -205,8 +213,8 @@ class ConversationAdmin(admin.ModelAdmin):
         }
         
         stats_html = []
-        for label, count in stats.items():
-            stats_html.append(f'<div><strong>{label}:</strong> {count}</div>')
+        for key, value in stats.items():
+            stats_html.append(f'<div><strong>{key}:</strong> {value}</div>')
         
         return format_html(''.join(stats_html))
     message_statistics.short_description = 'Message Statistics'
@@ -215,49 +223,44 @@ class ConversationAdmin(admin.ModelAdmin):
         last_message = obj.messages.order_by('-created_at').first()
         if last_message:
             return format_html(
-                '<div><strong>Sender:</strong> {}</div>'
+                '<div><strong>From:</strong> {}</div>'
                 '<div><strong>Content:</strong> {}</div>'
                 '<div><strong>Time:</strong> {}</div>',
-                last_message.sender.name or last_message.sender.email,
-                last_message.content[:100] + ('...' if len(last_message.content) > 100 else ''),
-                last_message.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                last_message.sender.name if last_message.sender else 'System',
+                last_message.content[:50] + ('...' if len(last_message.content) > 50 else ''),
+                last_message.created_at.strftime('%Y-%m-%d %H:%M')
             )
         return 'No messages yet'
     last_message_info.short_description = 'Last Message'
     
     def conversation_analytics(self, obj):
         # Most active participants
-        active_participants = obj.messages.values(
-            'sender__name', 'sender__email'
-        ).annotate(
+        participant_stats = obj.messages.values('sender__name', 'sender__email').annotate(
             message_count=Count('id')
-        ).order_by('-message_count')[:3]
+        ).order_by('-message_count')[:5]
         
         analytics_html = ['<div><strong>Most Active Participants:</strong></div>']
-        for participant in active_participants:
-            name = participant['sender__name'] or participant['sender__email'].split('@')[0]
-            analytics_html.append(
-                f'<div style="margin-left: 10px;">{name}: {participant["message_count"]} messages</div>'
-            )
+        for stat in participant_stats:
+            name = stat['sender__name'] or stat['sender__email']
+            analytics_html.append(f'<div>• {name}: {stat["message_count"]} messages</div>')
         
         return format_html(''.join(analytics_html))
     conversation_analytics.short_description = 'Analytics'
     
-    # Actions
     def archive_conversations(self, request, queryset):
         updated = queryset.update(is_archived=True)
-        self.message_user(request, f"Successfully archived {updated} conversations.")
-    archive_conversations.short_description = "Archive selected conversations"
+        self.message_user(request, f'{updated} conversations archived successfully.')
+    archive_conversations.short_description = 'Archive selected conversations'
     
     def unarchive_conversations(self, request, queryset):
         updated = queryset.update(is_archived=False)
-        self.message_user(request, f"Successfully unarchived {updated} conversations.")
-    unarchive_conversations.short_description = "Unarchive selected conversations"
+        self.message_user(request, f'{updated} conversations unarchived successfully.')
+    unarchive_conversations.short_description = 'Unarchive selected conversations'
     
     def export_conversation_data(self, request, queryset):
         # This would export conversation data - placeholder for now
-        self.message_user(request, f"Export functionality would be implemented here for {queryset.count()} conversations.")
-    export_conversation_data.short_description = "Export conversation data"
+        self.message_user(request, f'Export feature coming soon for {queryset.count()} conversations.')
+    export_conversation_data.short_description = 'Export conversation data'
 
 
 class MessageReactionInline(admin.TabularInline):
@@ -334,180 +337,155 @@ class MessageAdmin(admin.ModelAdmin):
     
     def conversation_link(self, obj):
         url = reverse('admin:messaging_conversation_change', args=[obj.conversation.id])
-        title = obj.conversation.title or f"Conversation {obj.conversation.id}"
-        return format_html('<a href="{}">{}</a>', url, title)
+        return format_html('<a href="{}">{}</a>', url, str(obj.conversation))
     conversation_link.short_description = 'Conversation'
     
     def sender_info(self, obj):
-        return format_html(
-            '<div><strong>{}</strong></div><div style="color: gray; font-size: 11px;">{}</div>',
-            obj.sender.name or obj.sender.email.split('@')[0],
-            obj.sender.email
-        )
+        if obj.sender:
+            return format_html(
+                '<div><strong>{}</strong></div><small>{}</small>',
+                obj.sender.name or 'Unknown',
+                obj.sender.email
+            )
+        return format_html('<span style="color: gray;">System</span>')
     sender_info.short_description = 'Sender'
     
     def content_preview(self, obj):
+        if obj.is_deleted:
+            return format_html('<span style="color: red; font-style: italic;">🗑️ Message deleted</span>')
+        
         if obj.message_type == 'TEXT':
-            content = obj.content[:80] + ('...' if len(obj.content) > 80 else '')
-            return format_html('<div style="max-width: 300px;">{}</div>', content)
+            content = obj.content[:100] + ('...' if len(obj.content) > 100 else '')
+            if obj.is_edited:
+                content += ' ✏️'
+            return content
         elif obj.message_type == 'IMAGE':
             if obj.image:
-                return format_html(
-                    '📷 <a href="{}" target="_blank">View Image</a>',
-                    obj.image.url
-                )
+                return format_html('📷 <a href="{}" target="_blank">View Image</a>', obj.image.url)
             return '📷 Image Message'
         elif obj.message_type == 'FILE':
             if obj.file:
-                return format_html(
-                    '📎 <a href="{}" target="_blank">{}</a>',
-                    obj.file.url,
-                    obj.file_name or 'Download File'
-                )
+                return format_html('📎 <a href="{}" target="_blank">{}</a>', 
+                                 obj.file.url, obj.file_name or 'Download File')
             return f'📎 File: {obj.file_name or "Unknown"}'
         elif obj.message_type == 'LOCATION':
-            return format_html(
-                '📍 Location: {}',
-                obj.location_name or f'{obj.latitude}, {obj.longitude}'
-            )
+            if obj.latitude and obj.longitude:
+                return format_html('📍 <a href="https://maps.google.com/?q={},{}" target="_blank">{}</a>',
+                                 obj.latitude, obj.longitude, obj.location_name or 'View Location')
+            return '📍 Location Message'
+        elif obj.message_type == 'SYSTEM':
+            return format_html('<span style="color: blue; font-style: italic;">🤖 {}</span>', obj.content)
         else:
             return f'{obj.message_type} Message'
     content_preview.short_description = 'Content'
     
     def message_type_badge(self, obj):
-        colors = {
-            'TEXT': 'blue',
-            'IMAGE': 'green',
-            'FILE': 'orange',
-            'LOCATION': 'purple',
-            'SYSTEM': 'gray'
+        badges = {
+            'TEXT': ('<span style="background: green; color: white; padding: 2px 6px; border-radius: 3px;">💬 Text</span>', 'green'),
+            'IMAGE': ('<span style="background: blue; color: white; padding: 2px 6px; border-radius: 3px;">📷 Image</span>', 'blue'),
+            'FILE': ('<span style="background: orange; color: white; padding: 2px 6px; border-radius: 3px;">📎 File</span>', 'orange'),
+            'LOCATION': ('<span style="background: purple; color: white; padding: 2px 6px; border-radius: 3px;">📍 Location</span>', 'purple'),
+            'SYSTEM': ('<span style="background: gray; color: white; padding: 2px 6px; border-radius: 3px;">🤖 System</span>', 'gray'),
+            'QUOTE': ('<span style="background: teal; color: white; padding: 2px 6px; border-radius: 3px;">💬 Quote</span>', 'teal'),
         }
-        color = colors.get(obj.message_type, 'gray')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px;">{}</span>',
-            color,
-            obj.message_type
-        )
+        badge, _ = badges.get(obj.message_type, ('Unknown', 'black'))
+        return format_html(badge)
     message_type_badge.short_description = 'Type'
     
     def reaction_summary(self, obj):
-        reactions = obj.reactions.values('reaction_type').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        
-        if not reactions:
-            return '-'
-        
-        reaction_html = []
-        for reaction in reactions:
-            reaction_html.append(f'{reaction["reaction_type"]} {reaction["count"]}')
-        
-        return format_html(' '.join(reaction_html))
+        reactions = obj.reactions.values('reaction_type').annotate(count=Count('id'))
+        if reactions:
+            reaction_html = []
+            for reaction in reactions:
+                reaction_html.append(f'{reaction["reaction_type"]} {reaction["count"]}')
+            return format_html(' '.join(reaction_html))
+        return '-'
     reaction_summary.short_description = 'Reactions'
     
     def read_status(self, obj):
         total_participants = obj.conversation.participants.count()
         read_count = obj.read_by.count()
         
-        if obj.sender in obj.read_by.all():
-            read_count -= 1  # Don't count sender
-            total_participants -= 1
-        
-        if total_participants == 0:
-            return 'No other participants'
-        
-        percentage = (read_count / total_participants) * 100
-        
-        if percentage == 100:
-            color = 'green'
-            icon = '✅'
-        elif percentage >= 50:
-            color = 'orange'
-            icon = '👁️'
+        if obj.sender:
+            # Exclude sender from participants count
+            participants_excluding_sender = total_participants - 1
+            if participants_excluding_sender == 0:
+                return format_html('<span style="color: gray;">No other participants</span>')
+            
+            read_percentage = (read_count / total_participants) * 100 if total_participants > 0 else 0
+            
+            if read_count == 0:
+                return format_html('<span style="color: red;">👁️ Unread by all</span>')
+            elif read_count == participants_excluding_sender:
+                return format_html('<span style="color: green;">👁️ Read by all</span>')
+            else:
+                return format_html('<span style="color: orange;">👁️ Read by {}/{} ({:.0f}%)</span>', 
+                                 read_count, participants_excluding_sender, read_percentage)
         else:
-            color = 'red'
-            icon = '📩'
-        
-        return format_html(
-            '<span style="color: {};">{} {}/{} ({}%)</span>',
-            color, icon, read_count, total_participants, int(percentage)
-        )
+            # System message
+            return format_html('<span style="color: gray;">System message</span>')
     read_status.short_description = 'Read Status'
     
     def message_flags(self, obj):
         flags = []
         if obj.is_edited:
-            flags.append('<span style="background: blue; color: white; padding: 1px 4px; border-radius: 2px; font-size: 10px;">EDITED</span>')
+            flags.append('<span style="background: blue; color: white; padding: 2px 6px; border-radius: 3px;">✏️ Edited</span>')
         if obj.is_deleted:
-            flags.append('<span style="background: red; color: white; padding: 1px 4px; border-radius: 2px; font-size: 10px;">DELETED</span>')
+            flags.append('<span style="background: red; color: white; padding: 2px 6px; border-radius: 3px;">🗑️ Deleted</span>')
         if obj.reply_to:
-            flags.append('<span style="background: green; color: white; padding: 1px 4px; border-radius: 2px; font-size: 10px;">REPLY</span>')
+            flags.append('<span style="background: purple; color: white; padding: 2px 6px; border-radius: 3px;">↩️ Reply</span>')
         
         return format_html(' '.join(flags)) if flags else '-'
     message_flags.short_description = 'Flags'
     
     def reaction_breakdown(self, obj):
-        reactions = obj.reactions.select_related('user')
-        if not reactions:
-            return 'No reactions'
-        
-        breakdown_html = []
-        for reaction in reactions:
-            user_name = reaction.user.name or reaction.user.email.split('@')[0]
-            breakdown_html.append(
-                f'<div>{reaction.reaction_type} {user_name} ({reaction.created_at.strftime("%m/%d %H:%M")})</div>'
-            )
-        
-        return format_html(''.join(breakdown_html))
+        reactions = obj.reactions.select_related('user').order_by('-created_at')
+        if reactions:
+            reaction_html = ['<div><strong>Reactions:</strong></div>']
+            for reaction in reactions:
+                user_name = reaction.user.name or reaction.user.email
+                reaction_html.append(f'<div>• {reaction.reaction_type} by {user_name}</div>')
+            return format_html(''.join(reaction_html))
+        return 'No reactions'
     reaction_breakdown.short_description = 'Reaction Breakdown'
     
     def read_by_list(self, obj):
-        readers = obj.read_by.all()
-        if not readers:
-            return 'Unread by all'
-        
-        reader_html = []
-        for reader in readers:
-            user_name = reader.name or reader.email.split('@')[0]
-            reader_html.append(f'<div>✓ {user_name}</div>')
-        
-        return format_html(''.join(reader_html))
+        readers = list(obj.read_by.all())
+        if readers:
+            reader_html = ['<div><strong>Read by:</strong></div>']
+            for reader in readers:
+                reader_name = reader.name or reader.email
+                reader_html.append(f'<div>• {reader_name}</div>')
+            return format_html(''.join(reader_html))
+        return 'Not read by anyone'
     read_by_list.short_description = 'Read By'
     
     def message_analytics(self, obj):
-        analytics = {
-            'Character Count': len(obj.content),
-            'Word Count': len(obj.content.split()) if obj.content else 0,
-            'Reaction Count': obj.reactions.count(),
-            'Reply Count': obj.replies.count() if hasattr(obj, 'replies') else 0,
-        }
+        analytics_html = [
+            f'<div><strong>Character Count:</strong> {len(obj.content)}</div>',
+            f'<div><strong>Word Count:</strong> {len(obj.content.split())}</div>',
+        ]
         
-        analytics_html = []
-        for label, value in analytics.items():
-            analytics_html.append(f'<div><strong>{label}:</strong> {value}</div>')
+        if obj.file_size:
+            analytics_html.append(f'<div><strong>File Size:</strong> {obj.file_size} bytes</div>')
         
         return format_html(''.join(analytics_html))
-    message_analytics.short_description = 'Message Analytics'
+    message_analytics.short_description = 'Analytics'
     
-    # Actions
     def mark_as_read_by_all(self, request, queryset):
-        count = 0
+        total_marked = 0
         for message in queryset:
-            participants = message.conversation.participants.exclude(id=message.sender.id)
+            participants = message.conversation.participants.exclude(id=message.sender.id if message.sender else None)
             for participant in participants:
                 message.read_by.add(participant)
-            count += 1
-        
-        self.message_user(request, f"Marked {count} messages as read by all participants.")
-    mark_as_read_by_all.short_description = "Mark as read by all participants"
+            total_marked += 1
+        self.message_user(request, f'{total_marked} messages marked as read by all participants.')
+    mark_as_read_by_all.short_description = 'Mark as read by all participants'
     
     def soft_delete_messages(self, request, queryset):
-        updated = queryset.update(
-            is_deleted=True,
-            deleted_at=timezone.now()
-        )
-        self.message_user(request, f"Soft deleted {updated} messages.")
-    soft_delete_messages.short_description = "Soft delete selected messages"
+        updated = queryset.update(is_deleted=True, deleted_at=timezone.now())
+        self.message_user(request, f'{updated} messages soft deleted successfully.')
+    soft_delete_messages.short_description = 'Soft delete selected messages'
 
 
 @admin.register(MessageReaction)
@@ -522,31 +500,29 @@ class MessageReactionAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'message__conversation', 'message__sender', 'user'
+            'user', 'message__conversation', 'message__sender'
         )
     
     def message_info(self, obj):
+        content_preview = obj.message.content[:50] + ('...' if len(obj.message.content) > 50 else '')
+        url = reverse('admin:messaging_message_change', args=[obj.message.id])
         return format_html(
-            '<div><strong>Conversation:</strong> {}</div>'
-            '<div><strong>Sender:</strong> {}</div>'
-            '<div><strong>Content:</strong> {}</div>',
-            obj.message.conversation.title or f"Conversation {obj.message.conversation.id}",
-            obj.message.sender.name or obj.message.sender.email,
-            obj.message.content[:50] + ('...' if len(obj.message.content) > 50 else '')
+            '<a href="{}">Message #{}</a><br/><small>{}</small>',
+            url, obj.message.id, content_preview
         )
-    message_info.short_description = 'Message Info'
+    message_info.short_description = 'Message'
     
     def user_info(self, obj):
+        url = reverse('admin:users_customuser_change', args=[obj.user.id])
         return format_html(
-            '<div><strong>{}</strong></div><div style="color: gray; font-size: 11px;">{}</div>',
-            obj.user.name or obj.user.email.split('@')[0],
-            obj.user.email
+            '<a href="{}">{}</a><br/><small>{}</small>',
+            url, obj.user.name or 'Unknown', obj.user.email
         )
     user_info.short_description = 'User'
     
     def reaction_emoji(self, obj):
         return format_html(
-            '<span style="font-size: 24px;">{}</span>',
+            '<span style="font-size: 20px;">{}</span>',
             obj.reaction_type
         )
     reaction_emoji.short_description = 'Reaction'
@@ -569,71 +545,58 @@ class ConversationMemberAdmin(admin.ModelAdmin):
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
-            'conversation', 'user', 'last_read_message'
+            'user', 'conversation'
         )
     
     def conversation_info(self, obj):
         url = reverse('admin:messaging_conversation_change', args=[obj.conversation.id])
-        title = obj.conversation.title or f"Conversation {obj.conversation.id}"
-        conv_type = "👥 Group" if obj.conversation.is_group else "💬 Direct"
         return format_html(
-            '<div><a href="{}">{}</a></div><div style="color: gray; font-size: 11px;">{}</div>',
-            url, title, conv_type
+            '<a href="{}">{}</a><br/><small>{} participants</small>',
+            url, str(obj.conversation), obj.conversation.participants.count()
         )
     conversation_info.short_description = 'Conversation'
     
     def user_info(self, obj):
+        url = reverse('admin:users_customuser_change', args=[obj.user.id])
         admin_badge = '👑' if obj.conversation.admin == obj.user else ''
         return format_html(
-            '<div>{} <strong>{}</strong></div><div style="color: gray; font-size: 11px;">{}</div>',
-            admin_badge,
-            obj.user.name or obj.user.email.split('@')[0],
-            obj.user.email
+            '<a href="{}">{} {}</a><br/><small>{}</small>',
+            url, admin_badge, obj.user.name or 'Unknown', obj.user.email
         )
     user_info.short_description = 'User'
     
     def member_permissions(self, obj):
         permissions = []
         if obj.can_add_members:
-            permissions.append('➕ Add')
+            permissions.append('Add Members')
         if obj.can_remove_members:
-            permissions.append('➖ Remove')
+            permissions.append('Remove Members')
         if obj.can_edit_conversation:
-            permissions.append('✏️ Edit')
+            permissions.append('Edit Conversation')
         
-        return format_html(' | '.join(permissions)) if permissions else '👁️ View Only'
+        return ', '.join(permissions) if permissions else 'No special permissions'
     member_permissions.short_description = 'Permissions'
     
     def member_status(self, obj):
         status = []
+        if obj.is_muted:
+            status.append('<span style="background: orange; color: white; padding: 2px 6px; border-radius: 3px;">🔇 Muted</span>')
+        if obj.is_blocked:
+            status.append('<span style="background: red; color: white; padding: 2px 6px; border-radius: 3px;">🚫 Blocked</span>')
         if obj.left_at:
-            status.append('<span style="color: red;">🚪 Left</span>')
-        elif obj.is_blocked:
-            status.append('<span style="color: red;">🚫 Blocked</span>')
-        elif obj.is_muted:
-            status.append('<span style="color: orange;">🔇 Muted</span>')
-        else:
-            status.append('<span style="color: green;">✅ Active</span>')
+            status.append('<span style="background: gray; color: white; padding: 2px 6px; border-radius: 3px;">👋 Left</span>')
         
-        return format_html(' '.join(status))
+        return format_html(' '.join(status)) if status else format_html('<span style="color: green;">✅ Active</span>')
     member_status.short_description = 'Status'
     
     def activity_info(self, obj):
-        if obj.last_read_at:
-            time_diff = timezone.now() - obj.last_read_at
-            if time_diff.days > 0:
-                last_read = f"{time_diff.days} days ago"
-            elif time_diff.seconds > 3600:
-                hours = time_diff.seconds // 3600
-                last_read = f"{hours} hours ago"
-            else:
-                minutes = time_diff.seconds // 60
-                last_read = f"{minutes} minutes ago"
-        else:
-            last_read = "Never"
+        info_html = [f'<div><strong>Joined:</strong> {obj.joined_at.strftime("%Y-%m-%d %H:%M")}</div>']
         
-        return format_html(
-            '<div><strong>Last Read:</strong> {}</div>',
-            last_read
-        )
+        if obj.last_read_at:
+            info_html.append(f'<div><strong>Last Read:</strong> {obj.last_read_at.strftime("%Y-%m-%d %H:%M")}</div>')
+        
+        if obj.left_at:
+            info_html.append(f'<div><strong>Left:</strong> {obj.left_at.strftime("%Y-%m-%d %H:%M")}</div>')
+        
+        return format_html(''.join(info_html))
     activity_info.short_description = 'Activity'

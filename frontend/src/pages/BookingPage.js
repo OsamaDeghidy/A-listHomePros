@@ -11,7 +11,8 @@ import {
   FaCheckCircle,
   FaComments,
   FaDollarSign,
-  FaTools
+  FaTools,
+  FaHome
 } from 'react-icons/fa';
 import { schedulingService, alistProsService, messagingService, serviceService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -54,6 +55,8 @@ const BookingPage = () => {
   const [appointmentId, setAppointmentId] = useState(null);
   const [conversationId, setConversationId] = useState(null);
   const [bookingComplete, setBookingComplete] = useState(false);
+  const [redirectTimer, setRedirectTimer] = useState(3);
+  const [messageSent, setMessageSent] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -70,6 +73,22 @@ const BookingPage = () => {
       userToken: localStorage.getItem('authToken') || sessionStorage.getItem('authToken')
     });
   }, [isAuthenticated, currentUser]);
+
+  // Auto redirect timer after booking completion
+  useEffect(() => {
+    let timer;
+    if (bookingComplete && conversationId && redirectTimer > 0) {
+      timer = setTimeout(() => {
+        setRedirectTimer(prev => prev - 1);
+      }, 1000);
+    } else if (bookingComplete && conversationId && redirectTimer === 0) {
+      navigate(`/dashboard/messages/${conversationId}`);
+    }
+    
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [bookingComplete, conversationId, redirectTimer, navigate]);
   
   // Fetch professional data
   useEffect(() => {
@@ -86,14 +105,31 @@ const BookingPage = () => {
         setProfessional(proResponse.data);
 
         // Fetch availability slots for this professional
+        try {
         const availabilityResponse = await schedulingService.getAvailabilitySlots({ alistpro: id });
         console.log('Availability slots:', availabilityResponse.data);
         setAvailabilitySlots(availabilityResponse.data.results || []);
+        } catch (availErr) {
+          console.warn('Failed to fetch availability slots:', availErr);
+          setAvailabilitySlots([]);
+        }
 
         // Fetch service categories
+        try {
         const categoriesResponse = await serviceService.getCategories();
         console.log('Service categories:', categoriesResponse.data);
-        setServiceCategories(categoriesResponse.data.results || []);
+          setServiceCategories(categoriesResponse.data.results || categoriesResponse.data || []);
+        } catch (catErr) {
+          console.warn('Failed to fetch service categories:', catErr);
+          // Try alternative endpoint
+          try {
+            const altCategoriesResponse = await alistProsService.getCategories();
+            setServiceCategories(altCategoriesResponse.data.results || altCategoriesResponse.data || []);
+          } catch (altErr) {
+            console.warn('Failed to fetch categories from alternative endpoint:', altErr);
+            setServiceCategories([]);
+          }
+        }
 
         setProfessionalLoading(false);
       } catch (err) {
@@ -110,6 +146,21 @@ const BookingPage = () => {
   const getAvailableDates = () => {
     const dates = [];
     const today = new Date();
+    
+    // If no availability slots, show default dates
+    if (availabilitySlots.length === 0) {
+      for (let i = 1; i <= 14; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        dates.push({
+          date: date.toISOString().split('T')[0],
+          dayName: date.toLocaleDateString(isArabic ? 'ar' : 'en', { weekday: 'short' }),
+          day: date.getDate(),
+          month: date.toLocaleDateString(isArabic ? 'ar' : 'en', { month: 'short' })
+        });
+      }
+      return dates;
+    }
     
     // Generate next 30 days and check availability
     for (let i = 1; i <= 30; i++) {
@@ -135,6 +186,18 @@ const BookingPage = () => {
 
   const getAvailableTimesForDate = (selectedDate) => {
     if (!selectedDate) return [];
+    
+    // If no availability slots, show default times
+    if (availabilitySlots.length === 0) {
+      return [
+        { value: '09:00', label: '9:00 AM' },
+        { value: '10:00', label: '10:00 AM' },
+        { value: '11:00', label: '11:00 AM' },
+        { value: '14:00', label: '2:00 PM' },
+        { value: '15:00', label: '3:00 PM' },
+        { value: '16:00', label: '4:00 PM' }
+      ];
+    }
     
     const date = new Date(selectedDate);
     const dayOfWeek = (date.getDay() + 6) % 7; // Convert to Monday=0 format
@@ -172,6 +235,18 @@ const BookingPage = () => {
     return serviceCategories.find(cat => cat.id === parseInt(selectedService));
   };
 
+  const getProfessionalUserId = () => {
+    // Try multiple ways to get the professional's user ID
+    if (professional?.user?.id) {
+      return professional.user.id;
+    }
+    if (professional?.user_id) {
+      return professional.user_id;
+    }
+    // Fallback: if we have professional ID, we can try to get user from that
+    return null;
+  };
+
   // Form submission handlers
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -191,7 +266,7 @@ const BookingPage = () => {
         throw new Error(isArabic ? 'يرجى ملء جميع الحقول المطلوبة' : 'Please fill in all required fields');
       }
 
-      if (!professional?.user?.id) {
+      if (!professional?.id) {
         throw new Error(isArabic ? 'لم يتم العثور على معلومات المحترف' : 'Professional information not found');
       }
 
@@ -209,20 +284,7 @@ const BookingPage = () => {
         throw new Error(isArabic ? 'لا يمكن حجز موعد في تاريخ سابق' : 'Cannot book appointment in the past');
       }
 
-      // Validate that professional has availability on the selected date
-      const availableTimesForDate = getAvailableTimesForDate(selectedDate);
-      if (availableTimesForDate.length === 0) {
-        throw new Error(isArabic ? 'المحترف غير متاح في هذا التاريخ' : 'Professional is not available on this date');
-      }
-
-      // Validate that selected time is available
-      const isTimeAvailable = availableTimesForDate.some(time => time.value === selectedTime);
-      if (!isTimeAvailable) {
-        throw new Error(isArabic ? 'الوقت المختار غير متاح' : 'Selected time is not available');
-      }
-
       // Create appointment with initial status 'REQUESTED'
-      // Make sure all field names match the backend model exactly
       const appointmentData = {
         alistpro: id,
         service_category: parseInt(selectedService),
@@ -233,21 +295,7 @@ const BookingPage = () => {
         location: serviceAddress
       };
 
-      // Validate appointment data before sending
-      console.log('=== APPOINTMENT DATA VALIDATION ===');
-      console.log('alistpro (professional ID):', id, 'Type:', typeof id);
-      console.log('service_category:', parseInt(selectedService), 'Type:', typeof parseInt(selectedService));
-      console.log('appointment_date:', selectedDate, 'Type:', typeof selectedDate);
-      console.log('start_time:', selectedTime, 'Type:', typeof selectedTime);
-      console.log('end_time:', calculateEndTime(selectedTime), 'Type:', typeof calculateEndTime(selectedTime));
-      console.log('notes:', problemDescription);
-      console.log('location:', serviceAddress);
-      console.log('Full appointment data:', appointmentData);
-      console.log('Professional data:', professional);
-      console.log('Current user:', currentUser);
-      console.log('Selected service details:', getSelectedServiceDetails());
-      console.log('Available slots for selected date:', getAvailableTimesForDate(selectedDate));
-
+      console.log('Creating appointment with data:', appointmentData);
       const appointmentResponse = await schedulingService.createAppointment(appointmentData);
       const newAppointmentId = appointmentResponse.data.id;
       setAppointmentId(newAppointmentId);
@@ -255,58 +303,138 @@ const BookingPage = () => {
       console.log('Appointment created successfully:', appointmentResponse.data);
 
       // Create conversation between client and professional
-      // Use the ConversationCreateSerializer format with participants and initial_message
+      const professionalUserId = getProfessionalUserId();
+      if (!professionalUserId) {
+        console.warn('Cannot create conversation: Professional user ID not found');
+        // Still mark booking as complete even without conversation
+        setBookingComplete(true);
+        setLoading(false);
+        return;
+      }
+
+      const selectedServiceName = getSelectedServiceDetails()?.name || (isArabic ? 'خدمة' : 'service');
+      const formattedDate = new Date(selectedDate).toLocaleDateString(
+        isArabic ? 'ar-SA' : 'en-US', 
+        { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }
+      );
+
       const initialMessage = isArabic 
-        ? `مرحباً! لقد قمت بحجز موعد لـ${getSelectedServiceDetails()?.name || 'خدمة'} في ${selectedDate} الساعة ${selectedTime}.
+        ? `🏠 طلب خدمة جديد
 
-وصف المشكلة: ${problemDescription}
+📝 تفاصيل الطلب:
+• نوع الخدمة: ${selectedServiceName}
+• التاريخ: ${formattedDate}
+• الوقت: ${selectedTime}
 
-العنوان: ${serviceAddress}
-رقم الهاتف: ${contactPhone}
-مستوى الأولوية: ${urgencyLevel === 'urgent' ? 'عاجل' : 'عادي'}
+📍 وصف المشكلة:
+${problemDescription}
 
-يرجى مناقشة تفاصيل الخدمة والسعر المقترح.`
-        : `Hello! I've booked an appointment for ${getSelectedServiceDetails()?.name || 'service'} on ${selectedDate} at ${selectedTime}.
+📋 معلومات الاتصال:
+• العنوان: ${serviceAddress}
+• الهاتف: ${contactPhone}
+• الأولوية: ${urgencyLevel === 'urgent' ? 'عاجل ⚡' : 'عادي 📅'}
 
-Problem Description: ${problemDescription}
+🎯 رقم الموعد: #${newAppointmentId}
 
-Address: ${serviceAddress}
-Phone: ${contactPhone}
-Urgency Level: ${urgencyLevel}
+نتطلع لتلقي عرض السعر وتفاصيل الخدمة. شكراً لك!`
+        : `🏠 New Service Request
 
-Please discuss the service details and your proposed pricing.`;
+📝 Request Details:
+• Service Type: ${selectedServiceName}
+• Date: ${formattedDate}
+• Time: ${selectedTime}
 
+📍 Problem Description:
+${problemDescription}
+
+📋 Contact Information:
+• Address: ${serviceAddress}
+• Phone: ${contactPhone}
+• Urgency: ${urgencyLevel === 'urgent' ? 'Urgent ⚡' : 'Normal 📅'}
+
+🎯 Appointment ID: #${newAppointmentId}
+
+Looking forward to receiving your quote and service details. Thank you!`;
+
+      let conversationCreated = false;
+      let conversationResponse = null;
+      
+      try {
+        // Create conversation with correct field names
       const conversationData = {
-        participants: [currentUser.id, professional.user.id],
+          participant_ids: [professionalUserId], // Fixed: use participant_ids instead of participants
+          is_group: false, // Direct conversation
         title: isArabic 
-          ? `طلب خدمة ${getSelectedServiceDetails()?.name || ''}`
-          : `Service Request - ${getSelectedServiceDetails()?.name || ''}`,
-        initial_message: initialMessage
+            ? `طلب خدمة - ${selectedServiceName} - #${newAppointmentId}`
+            : `Service Request - ${selectedServiceName} - #${newAppointmentId}`,
+          related_object_type: 'appointment',
+          related_object_id: newAppointmentId
       };
 
       console.log('Creating conversation with data:', conversationData);
-      const conversationResponse = await messagingService.createConversation(conversationData);
-      const newConversationId = conversationResponse.data.id;
-      setConversationId(newConversationId);
+        
+        try {
+          conversationResponse = await messagingService.createConversation(conversationData);
+          conversationCreated = true;
+          
+          // Send initial message separately
+          if (conversationResponse.data.id) {
+            // Set conversation ID immediately
+            setConversationId(conversationResponse.data.id);
+            
+            try {
+              const messageResponse = await messagingService.sendMessage(conversationResponse.data.id, {
+                content: initialMessage
+              });
+              console.log('✅ Initial message sent successfully:', messageResponse.data);
+              setMessageSent(true);
+            } catch (msgErr) {
+              console.error('❌ Failed to send initial message:', msgErr);
+              console.error('Message error details:', msgErr.response?.data);
+              setMessageSent(false);
+            }
+          }
+        } catch (convErr) {
+          console.error('❌ Conversation creation failed:', convErr);
+          console.error('Conversation error details:', convErr.response?.data);
+        }
+        
+        if (conversationCreated && conversationResponse?.data?.id) {
+          console.log('✅ Conversation created successfully:', conversationResponse.data);
+          // Show success message
+          console.log(`🎉 Booking complete! Appointment ID: ${newAppointmentId}, Conversation ID: ${conversationResponse.data.id}`);
+        }
+      } catch (convErr) {
+        console.error('Failed to create conversation:', convErr);
+        // Continue even if conversation creation fails
+      }
 
-      console.log('Conversation created successfully:', conversationResponse.data);
-
-      // No need to send separate message since initial_message handles it
-
+      // Always mark booking as complete
       setBookingComplete(true);
       setLoading(false);
+
+      // Log success for debugging
+      console.log('🎯 Booking process completed:', {
+        appointmentId: newAppointmentId,
+        conversationId: conversationResponse?.data?.id,
+        conversationCreated,
+        professionalUserId
+      });
 
         } catch (err) {
       console.error('Error creating booking:', err);
       console.error('Error details:', err.response?.data);
-      console.error('Full error response:', err.response);
       
       // Parse error messages from different possible formats
       let errorMessage = isArabic ? 'فشل في إنشاء الحجز' : 'Failed to create booking';
       
       if (err.response?.data) {
         const errorData = err.response.data;
-        console.log('Detailed error data:', errorData);
         
         // Handle different error response formats
         if (typeof errorData === 'string') {
@@ -318,7 +446,6 @@ Please discuss the service details and your proposed pricing.`;
         } else if (errorData.error) {
           errorMessage = errorData.error;
         } else if (errorData.non_field_errors) {
-          console.log('Non-field errors:', errorData.non_field_errors);
           errorMessage = Array.isArray(errorData.non_field_errors) 
             ? errorData.non_field_errors.join(', ')
             : errorData.non_field_errors;
@@ -326,7 +453,6 @@ Please discuss the service details and your proposed pricing.`;
           // Handle field-specific errors
           const fieldErrors = [];
           for (const [field, errors] of Object.entries(errorData)) {
-            console.log(`Field error - ${field}:`, errors);
             if (Array.isArray(errors)) {
               fieldErrors.push(`${field}: ${errors.join(', ')}`);
             } else if (typeof errors === 'string') {
@@ -341,7 +467,6 @@ Please discuss the service details and your proposed pricing.`;
         errorMessage = err.message;
       }
       
-      console.log('Final error message:', errorMessage);
       setError(errorMessage);
       setLoading(false);
     }
@@ -356,6 +481,14 @@ Please discuss the service details and your proposed pricing.`;
   const handleBack = () => {
     if (step > 1) {
       setStep(step - 1);
+    }
+  };
+
+  const handleGoToMessages = () => {
+    if (conversationId) {
+      navigate(`/dashboard/messages/${conversationId}`);
+    } else {
+      navigate('/dashboard/messages');
     }
   };
 
@@ -402,29 +535,62 @@ Please discuss the service details and your proposed pricing.`;
             </h2>
             <p className="mb-6">
               {isArabic 
-                ? 'تم إنشاء موعدك ومحادثة مع المحترف. سيتواصل معك لمناقشة التفاصيل والأسعار.'
-                : 'Your appointment has been created and a conversation started with the professional. They will contact you to discuss details and pricing.'}
+                ? 'تم إنشاء موعدك بنجاح. سيتم توجيهك للمحادثة مع المحترف لمناقشة التفاصيل والأسعار.'
+                : 'Your appointment has been created successfully. You will be redirected to chat with the professional to discuss details and pricing.'}
             </p>
             
-            <div className="space-y-3">
+            {conversationId && (
+              <div className="mb-6">
+                <p className="text-sm text-green-600 mb-3">
+                  {isArabic ? `سيتم التوجيه للمحادثة خلال ${redirectTimer} ثواني...` : `Redirecting to chat in ${redirectTimer} seconds...`}
+                </p>
+                <div className="w-full bg-green-200 rounded-full h-2 mb-4">
+                  <div 
+                    className="bg-green-600 h-2 rounded-full transition-all duration-1000"
+                    style={{ width: `${((5 - redirectTimer) / 5) * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+            
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               {conversationId && (
-                <Link 
-                  to={`/messages/${conversationId}`}
-                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300 mr-3"
+                <button 
+                  onClick={handleGoToMessages}
+                  className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300 mr-3"
                 >
                   <FaComments className="mr-2" />
-                  {isArabic ? 'فتح المحادثة' : 'Open Conversation'}
-                </Link>
+                  {isArabic ? 'فتح المحادثة' : 'Open Chat'}
+                </button>
               )}
               
-              <Link 
-                to="/appointments"
-                className="inline-flex items-center px-6 py-3 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition duration-300"
+              <button 
+                onClick={() => navigate('/dashboard/appointments')}
+                className="inline-flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 mr-3"
               >
                 <FaCalendarAlt className="mr-2" />
-                {isArabic ? 'عرض مواعيدي' : 'View My Appointments'}
-              </Link>
+                {isArabic ? 'عرض المواعيد' : 'View Appointments'}
+              </button>
+
+              <button 
+                onClick={() => navigate('/dashboard')}
+                className="inline-flex items-center justify-center px-6 py-3 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition duration-300"
+              >
+                <FaHome className="mr-2" />
+                {isArabic ? 'الرئيسية' : 'Dashboard'}
+              </button>
             </div>
+            
+            {!conversationId && (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <FaInfoCircle className="inline mr-2" />
+                  {isArabic 
+                    ? 'تم إنشاء الموعد بنجاح، لكن لم يتم إنشاء المحادثة. يمكنك التواصل مع المحترف من خلال صفحة الرسائل.'
+                    : 'Appointment created successfully, but chat could not be created. You can contact the professional through the messages page.'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -539,6 +705,11 @@ Please discuss the service details and your proposed pricing.`;
                         </option>
                       ))}
                     </select>
+                    {serviceCategories.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {isArabic ? 'لا توجد فئات خدمة متاحة' : 'No service categories available'}
+                      </p>
+                    )}
                   </div>
                   
                   <div className="mb-6">

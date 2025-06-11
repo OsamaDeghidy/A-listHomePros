@@ -24,6 +24,7 @@ urlpatterns = [
     path('quotes/', views.ServiceQuoteListCreateView.as_view(), name='service-quote-list'),
     path('quotes/<int:pk>/', views.ServiceQuoteDetailView.as_view(), name='service-quote-detail'),
     path('quotes/<int:quote_id>/accept/', views.accept_quote, name='accept-quote'),
+    path('quotes/<int:quote_id>/reject/', views.reject_quote, name='reject-quote'),
     path('jobs/', views.JobAssignmentListView.as_view(), name='job-assignment-list'),
     path('jobs/<int:pk>/', views.JobAssignmentDetailView.as_view(), name='job-assignment-detail'),
     

@@ -2469,3 +2469,960 @@ title: Token
 minLength: 1
  
 }
+
+
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../hooks/useAuth';
+import { useLanguage } from '../hooks/useLanguage';
+import { messagingService, alistProsService } from '../services/api';
+import { 
+  FaInbox, 
+  FaUserCircle, 
+  FaPaperPlane, 
+  FaEllipsisV, 
+  FaSearch, 
+  FaPaperclip, 
+  FaRegSmile,
+  FaArrowLeft,
+  FaComments,
+  FaPhone,
+  FaVideo,
+  FaBell,
+  FaCircle,
+  FaCheckCircle,
+  FaCheck,
+  FaClock,
+  FaSyncAlt,
+  FaUserTag,
+  FaStar,
+  FaShieldAlt,
+  FaTimes,
+  FaFileContract,
+  FaDollarSign,
+  FaCalendarAlt,
+  FaMapMarkerAlt,
+  FaBusinessTime
+} from 'react-icons/fa';
+
+const MessagesPage = () => {
+  const { conversationId } = useParams();
+  const navigate = useNavigate();
+  const { currentUser, isAuthenticated } = useAuth();
+  const { language } = useLanguage();
+  const isArabic = language === 'ar';
+
+  // State management
+  const [conversations, setConversations] = useState([]);
+  const [activeConversation, setActiveConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sending, setSending] = useState(false);
+  const [lastFetchTime, setLastFetchTime] = useState(Date.now());
+  const [participantsInfo, setParticipantsInfo] = useState({});
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Refs
+  const messageEndRef = useRef(null);
+  const chatWindowRef = useRef(null);
+  const pollingIntervalRef = useRef(null);
+
+  // Auto-refresh interval (30 seconds)
+  const POLLING_INTERVAL = 30000;
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login?redirect=/dashboard/messages');
+      return;
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Fetch conversations on component mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchConversations();
+    }
+  }, [isAuthenticated]);
+
+  // Handle conversation selection from URL parameter
+  useEffect(() => {
+    if (conversationId && conversations.length > 0) {
+      const conversation = conversations.find(c => c.id === parseInt(conversationId));
+      if (conversation && (!activeConversation || activeConversation.id !== conversation.id)) {
+        setActiveConversation(conversation);
+        fetchMessages(conversation.id);
+      }
+    } else if (conversations.length > 0 && !activeConversation) {
+      const firstConversation = conversations[0];
+      setActiveConversation(firstConversation);
+      navigate(`/dashboard/messages/${firstConversation.id}`, { replace: true });
+      fetchMessages(firstConversation.id);
+    }
+  }, [conversationId, conversations, activeConversation?.id, navigate]);
+
+  // Auto-scroll to the latest message
+  useEffect(() => {
+    if (messageEndRef.current) {
+      messageEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  // Setup auto-refresh polling
+  useEffect(() => {
+    if (isAuthenticated && activeConversation) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+
+    return () => {
+      stopPolling();
+    };
+  }, [isAuthenticated, activeConversation?.id]);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    
+    pollingIntervalRef.current = setInterval(() => {
+      if (activeConversation && !messagesLoading && !sending) {
+        checkForNewMessages();
+      }
+    }, POLLING_INTERVAL);
+  }, [activeConversation?.id, messagesLoading, sending]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  const checkForNewMessages = useCallback(async () => {
+    if (!activeConversation) return;
+
+    try {
+      const response = await messagingService.getMessages(activeConversation.id);
+      const newMessagesData = response.data.results || [];
+      
+      if (newMessagesData.length !== messages.length) {
+        setMessages(newMessagesData);
+        setLastFetchTime(Date.now());
+        
+        try {
+          await messagingService.markConversationAsRead(activeConversation.id);
+          updateConversationReadStatus(activeConversation.id);
+        } catch (markReadErr) {
+          console.error('Error marking conversation as read:', markReadErr);
+        }
+      }
+      
+      await fetchConversationsQuietly();
+      
+    } catch (err) {
+      console.error('Error checking for new messages:', err);
+    }
+  }, [activeConversation?.id, messages.length]);
+
+  const fetchConversationsQuietly = useCallback(async () => {
+    try {
+      const response = await messagingService.getConversations();
+      const conversationsData = response.data.results || [];
+      setConversations(conversationsData);
+      
+      // Fetch participant info for all conversations
+      const participantIds = [];
+      conversationsData.forEach(conv => {
+        if (conv.participants) {
+          conv.participants.forEach(p => {
+            if (p.id !== currentUser?.id && !participantIds.includes(p.id)) {
+              participantIds.push(p.id);
+            }
+          });
+        }
+      });
+      
+      // Fetch participant details
+      participantIds.forEach(participantId => {
+        fetchParticipantInfo(participantId);
+      });
+      
+    } catch (err) {
+      console.error('Error fetching conversations quietly:', err);
+    }
+  }, [currentUser?.id]);
+
+  const fetchParticipantInfo = useCallback(async (userId) => {
+    if (participantsInfo[userId] || !userId) return;
+    
+    try {
+      // Try to get professional profile first
+      const response = await alistProsService.getProfileDetail(userId);
+      setParticipantsInfo(prev => ({
+        ...prev,
+        [userId]: {
+          ...response.data,
+          type: 'professional',
+          name: response.data.business_name || 
+                `${response.data.user?.first_name || ''} ${response.data.user?.last_name || ''}`.trim() ||
+                response.data.user?.name ||
+                response.data.user?.email ||
+                'Professional',
+          profession: response.data.profession || 'Professional Service Provider',
+          avatar: response.data.profile_image || response.data.user?.profile_picture,
+          rating: response.data.average_rating,
+          isVerified: response.data.is_verified,
+          totalJobs: response.data.total_jobs || 0,
+          phone: response.data.user?.phone_number,
+          email: response.data.user?.email
+        }
+      }));
+    } catch (err) {
+      // If not a professional, mark as regular user
+      setParticipantsInfo(prev => ({
+        ...prev,
+        [userId]: {
+          type: 'client',
+          name: 'Client',
+          profession: 'Client',
+          avatar: null,
+          rating: null,
+          isVerified: false,
+          totalJobs: 0,
+          phone: null,
+          email: null
+        }
+      }));
+    }
+  }, [participantsInfo]);
+
+  const updateConversationReadStatus = useCallback((conversationId) => {
+    setConversations(prev => 
+      prev.map(conv => 
+        conv.id === conversationId 
+          ? { ...conv, unread_count: 0 }
+          : conv
+      )
+    );
+  }, []);
+
+  const handleManualRefresh = useCallback(async () => {
+    if (refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      await fetchConversations();
+      if (activeConversation) {
+        await fetchMessages(activeConversation.id);
+      }
+    } catch (err) {
+      console.error('Error during manual refresh:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, activeConversation?.id]);
+
+  const fetchConversations = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await messagingService.getConversations();
+      const conversationsData = response.data.results || [];
+      setConversations(conversationsData);
+      
+      // Fetch participant info for all conversations
+      const participantIds = [];
+      conversationsData.forEach(conv => {
+        if (conv.participants) {
+          conv.participants.forEach(p => {
+            if (p.id !== currentUser?.id && !participantIds.includes(p.id)) {
+              participantIds.push(p.id);
+            }
+          });
+        }
+      });
+      
+      // Fetch participant details in parallel but safely
+      for (const participantId of participantIds) {
+        try {
+          await fetchParticipantInfo(participantId);
+        } catch (err) {
+          console.warn(`Failed to fetch info for participant ${participantId}:`, err);
+        }
+      }
+      
+      if (conversationsData.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      // If we have a specific conversation ID from URL, load it
+      if (conversationId) {
+        const targetConversation = conversationsData.find(c => c.id === parseInt(conversationId));
+        if (targetConversation) {
+          setActiveConversation(targetConversation);
+          await fetchMessages(targetConversation.id);
+        }
+      } else if (conversationsData.length > 0 && !activeConversation) {
+        // Otherwise load the first conversation
+        const firstConversation = conversationsData[0];
+        setActiveConversation(firstConversation);
+        navigate(`/dashboard/messages/${firstConversation.id}`, { replace: true });
+        await fetchMessages(firstConversation.id);
+      }
+      
+    } catch (err) {
+      console.error('Error fetching conversations:', err);
+      setError(isArabic ? 'فشل في تحميل المحادثات' : 'Failed to load conversations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMessages = async (conversationId) => {
+    if (!conversationId) return;
+    
+    setMessagesLoading(true);
+    
+    try {
+      const response = await messagingService.getMessages(conversationId);
+      const messagesData = response.data.results || [];
+      setMessages(messagesData);
+      
+      // Mark conversation as read
+      try {
+        await messagingService.markConversationAsRead(conversationId);
+        updateConversationReadStatus(conversationId);
+      } catch (markReadErr) {
+        console.error('Error marking conversation as read:', markReadErr);
+      }
+      
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+      setError(isArabic ? 'فشل في تحميل الرسائل' : 'Failed to load messages');
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  const handleConversationSelect = async (conversation) => {
+    if (activeConversation?.id === conversation.id) return;
+    
+    setActiveConversation(conversation);
+    navigate(`/dashboard/messages/${conversation.id}`, { replace: true });
+    await fetchMessages(conversation.id);
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeConversation || sending) return;
+
+    setSending(true);
+    const messageContent = newMessage.trim();
+    setNewMessage('');
+
+    try {
+      const response = await messagingService.sendMessage(activeConversation.id, {
+        content: messageContent
+      });
+
+      const newMessageObj = response.data;
+      setMessages(prev => [...prev, newMessageObj]);
+
+      setConversations(prev => 
+        prev.map(conv => 
+        conv.id === activeConversation.id 
+            ? { 
+                ...conv, 
+                last_message: { 
+                  content: messageContent,
+                  created_at: newMessageObj.created_at 
+                }
+              }
+          : conv
+        )
+      );
+      
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setError(isArabic ? 'فشل في إرسال الرسالة' : 'Failed to send message');
+      setNewMessage(messageContent);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCreateQuote = () => {
+    // Navigate to quote creation page with conversation context
+    if (activeConversation) {
+      const otherParticipant = getOtherParticipant(activeConversation);
+      if (otherParticipant) {
+        navigate(`/pro-dashboard/quotes/create?client=${otherParticipant.id}&conversation=${activeConversation.id}`);
+      }
+    }
+  };
+
+  const handleRequestQuote = () => {
+    // Navigate to service request creation with professional context
+    if (activeConversation) {
+      const otherParticipant = getOtherParticipant(activeConversation);
+      if (otherParticipant) {
+        navigate(`/dashboard/service-requests/create?professional=${otherParticipant.id}&conversation=${activeConversation.id}`);
+      }
+    }
+  };
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    if (date.toDateString() === yesterday.toDateString()) {
+      return isArabic ? 'أمس' : 'Yesterday';
+    }
+    
+    return date.toLocaleDateString(isArabic ? 'ar-EG' : 'en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  const getOtherParticipant = (conversation) => {
+    if (!conversation.participants) return null;
+    return conversation.participants.find(p => p.id !== currentUser?.id);
+  };
+
+  const getParticipantName = (conversation) => {
+    const otherParticipant = getOtherParticipant(conversation);
+    if (!otherParticipant) return isArabic ? 'محادثة' : 'Conversation';
+    
+    const participantInfo = participantsInfo[otherParticipant.id];
+    if (participantInfo) {
+      return participantInfo.name;
+    }
+    
+    return `${otherParticipant.first_name || ''} ${otherParticipant.last_name || ''}`.trim() ||
+           otherParticipant.name ||
+           otherParticipant.email || 
+           (isArabic ? 'مستخدم' : 'User');
+  };
+
+  const getParticipantDetails = (conversation) => {
+    const otherParticipant = getOtherParticipant(conversation);
+    if (!otherParticipant) return null;
+    
+    const participantInfo = participantsInfo[otherParticipant.id];
+    if (participantInfo) {
+      return participantInfo;
+    }
+    
+    return {
+      name: `${otherParticipant.first_name || ''} ${otherParticipant.last_name || ''}`.trim() ||
+            otherParticipant.name ||
+            (isArabic ? 'مستخدم' : 'User'),
+      profession: isArabic ? 'مستخدم' : 'User',
+      type: 'client',
+      rating: null,
+      isVerified: false,
+      avatar: otherParticipant.profile_picture,
+      phone: otherParticipant.phone_number,
+      email: otherParticipant.email,
+      totalJobs: 0
+    };
+  };
+
+  const filteredConversations = conversations.filter(conversation => {
+    const participantName = getParticipantName(conversation);
+    const lastMessageContent = conversation.last_message?.content || '';
+    const searchLower = searchTerm.toLowerCase();
+    
+    return participantName.toLowerCase().includes(searchLower) ||
+           lastMessageContent.toLowerCase().includes(searchLower);
+  });
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+        <span className="ml-3 text-lg">{isArabic ? 'جاري التحميل...' : 'Loading...'}</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Helmet>
+        <title>{isArabic ? 'الرسائل | A-List Home Pros' : 'Messages | A-List Home Pros'}</title>
+      </Helmet>
+
+      <div className="h-screen flex bg-gray-100">
+        {/* Conversations Sidebar */}
+        <div className="w-1/3 bg-white border-r border-gray-200 flex flex-col">
+          {/* Header */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              <h1 className="text-xl font-semibold text-gray-900">
+                {isArabic ? 'الرسائل' : 'Messages'}
+              </h1>
+              <div className="flex items-center space-x-2 rtl:space-x-reverse">
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={refreshing}
+                  className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-colors"
+                  title={isArabic ? 'تحديث الرسائل' : 'Refresh messages'}
+                >
+                  <FaSyncAlt className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
+                <Link
+                  to="/dashboard"
+                  className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-full transition-colors"
+                  title={isArabic ? 'العودة للوحة التحكم' : 'Back to dashboard'}
+                >
+                  <FaArrowLeft className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center text-xs text-gray-500">
+                <FaCircle className="h-2 w-2 text-green-500 mr-1 animate-pulse" />
+                <span>{isArabic ? 'تحديث تلقائي' : 'Auto-refresh'}</span>
+              </div>
+              <div className="text-xs text-gray-400">
+                {new Date(lastFetchTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+            
+            <div className="relative">
+              <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder={isArabic ? 'البحث في المحادثات...' : 'Search conversations...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          </div>
+          
+          {/* Conversations List */}
+          <div className="flex-1 overflow-y-auto">
+            {filteredConversations.length === 0 ? (
+              <div className="p-4 text-center">
+                <FaComments className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                <p className="text-gray-500">
+                  {isArabic ? 'لا توجد محادثات' : 'No conversations'}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {filteredConversations.map(conversation => {
+                  const participantDetails = getParticipantDetails(conversation);
+                  
+                  return (
+                    <motion.div
+                      key={conversation.id}
+                      whileHover={{ backgroundColor: '#f3f4f6' }}
+                      onClick={() => handleConversationSelect(conversation)}
+                      className={`p-4 cursor-pointer transition-colors ${
+                        activeConversation?.id === conversation.id 
+                          ? 'bg-blue-50 border-r-2 border-blue-500' 
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0 relative">
+                          {participantDetails?.avatar ? (
+                            <img
+                              src={participantDetails.avatar}
+                              alt={participantDetails.name}
+                              className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                            />
+                          ) : (
+                            <FaUserCircle className="h-12 w-12 text-gray-400" />
+                          )}
+                          {conversation.unread_count > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                              {conversation.unread_count}
+                            </span>
+                          )}
+                          {participantDetails?.isVerified && (
+                            <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1">
+                              <FaShieldAlt className="h-2 w-2 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="ml-3 flex-1 min-w-0">
+                          <div className="flex justify-between items-start">
+                            <div className="flex flex-col flex-1">
+                              <div className="flex items-center">
+                                <h3 className="text-sm font-medium text-gray-900 truncate mr-2">
+                                  {participantDetails?.name || getParticipantName(conversation)}
+                                </h3>
+                                {participantDetails?.isVerified && (
+                                  <FaCheckCircle className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                                )}
+                                {participantDetails?.rating && (
+                                  <div className="flex items-center ml-2">
+                                    <FaStar className="h-3 w-3 text-yellow-500" />
+                                    <span className="text-xs text-gray-600 ml-1">{participantDetails.rating.toFixed(1)}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate">
+                                {participantDetails?.profession}
+                                {participantDetails?.totalJobs > 0 && (
+                                  <span className="ml-2">• {participantDetails.totalJobs} {isArabic ? 'مهمة' : 'jobs'}</span>
+                                )}
+                              </p>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {formatTimestamp(conversation.last_message?.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 truncate mt-1">
+                            {conversation.last_message?.content || (isArabic ? 'لا توجد رسائل' : 'No messages')}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+            
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {activeConversation ? (
+            <>
+              {/* Chat Header */}
+              <div className="p-4 bg-white border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    {(() => {
+                      const participantDetails = getParticipantDetails(activeConversation);
+                      return (
+                        <>
+                          <div className="relative mr-3">
+                            {participantDetails?.avatar ? (
+                              <img
+                                src={participantDetails.avatar}
+                                alt={participantDetails.name}
+                                className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                              />
+                            ) : (
+                              <FaUserCircle className="h-12 w-12 text-gray-400" />
+                            )}
+                            {participantDetails?.isVerified && (
+                              <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1">
+                                <FaShieldAlt className="h-3 w-3 text-white" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center">
+                              <h2 className="text-lg font-semibold text-gray-900 mr-2">
+                                {participantDetails?.name || getParticipantName(activeConversation)}
+                              </h2>
+                              {participantDetails?.isVerified && (
+                                <FaCheckCircle className="h-4 w-4 text-blue-500" title={isArabic ? 'محقق' : 'Verified'} />
+                              )}
+                              {participantDetails?.rating && (
+                                <div className="flex items-center mr-2">
+                                  <FaStar className="h-3 w-3 text-yellow-500 mr-1" />
+                                  <span className="text-sm text-gray-600">{participantDetails.rating.toFixed(1)}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center text-sm text-gray-500">
+                              <FaUserTag className="h-3 w-3 mr-1" />
+                              <span>{participantDetails?.profession}</span>
+                              {participantDetails?.totalJobs > 0 && (
+                                <span className="ml-2">• {participantDetails.totalJobs} {isArabic ? 'مهمة مكتملة' : 'completed jobs'}</span>
+                              )}
+                              {participantDetails?.phone && (
+                                <span className="ml-2">• {participantDetails.phone}</span>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div className="flex space-x-2">
+                    {/* Action buttons based on user role */}
+                    {currentUser?.role === 'contractor' || currentUser?.role === 'specialist' || currentUser?.role === 'crew' ? (
+                      // Professional actions
+                      <button
+                        onClick={handleCreateQuote}
+                        className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                        title={isArabic ? 'إنشاء عرض سعر' : 'Create Quote'}
+                      >
+                        <FaFileContract className="h-4 w-4 mr-2" />
+                        <span>{isArabic ? 'عرض سعر' : 'Quote'}</span>
+                      </button>
+                    ) : (
+                      // Client actions
+                      <button
+                        onClick={handleRequestQuote}
+                        className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                        title={isArabic ? 'طلب خدمة' : 'Request Service'}
+                      >
+                        <FaBusinessTime className="h-4 w-4 mr-2" />
+                        <span>{isArabic ? 'طلب خدمة' : 'Request Service'}</span>
+                      </button>
+                    )}
+                    
+                    {(() => {
+                      const participantDetails = getParticipantDetails(activeConversation);
+                      return (
+                        <>
+                          {participantDetails?.phone && (
+                            <a
+                              href={`tel:${participantDetails.phone}`}
+                              className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                              title={isArabic ? 'اتصال هاتفي' : 'Phone call'}
+                            >
+                              <FaPhone className="h-5 w-5" />
+                            </a>
+                          )}
+                        </>
+                      );
+                    })()}
+                    <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
+                      <FaVideo className="h-5 w-5" />
+                    </button>
+                    <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
+                      <FaEllipsisV className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+                  
+              {/* Messages Area */}
+              <div 
+                ref={chatWindowRef}
+                className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50"
+              >
+                {messagesLoading ? (
+                  <div className="flex justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FaComments className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <p className="text-gray-500 mb-4">
+                      {isArabic ? 'ابدأ المحادثة بإرسال رسالة' : 'Start the conversation by sending a message'}
+                    </p>
+                    <div className="flex justify-center space-x-4">
+                      {currentUser?.role === 'contractor' || currentUser?.role === 'specialist' || currentUser?.role === 'crew' ? (
+                        <button
+                          onClick={handleCreateQuote}
+                          className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <FaFileContract className="h-4 w-4 mr-2" />
+                          <span>{isArabic ? 'إنشاء عرض سعر' : 'Create Quote'}</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleRequestQuote}
+                          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          <FaBusinessTime className="h-4 w-4 mr-2" />
+                          <span>{isArabic ? 'طلب خدمة' : 'Request Service'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <AnimatePresence>
+                    {messages.map((message, index) => {
+                      const isCurrentUserMessage = message.sender?.id === currentUser?.id;
+                      const senderInfo = participantsInfo[message.sender?.id];
+                      const senderName = senderInfo?.name || 
+                                       `${message.sender?.first_name || ''} ${message.sender?.last_name || ''}`.trim() ||
+                                       message.sender?.name ||
+                                       message.sender?.email ||
+                                       (isArabic ? 'مستخدم' : 'User');
+                      
+                      return (
+                        <motion.div
+                          key={message.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`flex ${isCurrentUserMessage ? 'justify-end' : 'justify-start'} mb-4`}
+                        >
+                          {!isCurrentUserMessage && (
+                            <div className="flex-shrink-0 mr-3">
+                              {senderInfo?.avatar ? (
+                                <img
+                                  src={senderInfo.avatar}
+                                  alt={senderName}
+                                  className="h-8 w-8 rounded-full object-cover border border-gray-200"
+                                />
+                              ) : (
+                                <FaUserCircle className="h-8 w-8 text-gray-400" />
+                              )}
+                            </div>
+                          )}
+                          
+                          <div className={`max-w-xs lg:max-w-md ${isCurrentUserMessage ? 'text-right' : 'text-left'}`}>
+                            {!isCurrentUserMessage && (
+                              <div className="flex items-center mb-1">
+                                <span className="text-xs font-medium text-gray-700 mr-2">
+                                  {senderName}
+                                </span>
+                                {senderInfo?.isVerified && (
+                                  <FaCheckCircle className="h-3 w-3 text-blue-500" title={isArabic ? 'محقق' : 'Verified'} />
+                                )}
+                                {senderInfo?.profession && (
+                                  <span className="text-xs text-gray-500 ml-2">
+                                    • {senderInfo.profession}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            
+                            <div className={`px-4 py-3 rounded-2xl shadow-sm border ${
+                              isCurrentUserMessage
+                                ? 'bg-blue-600 text-white border-blue-600 rounded-br-md'
+                                : 'bg-white text-gray-900 border-gray-200 rounded-bl-md'
+                            }`}>
+                              <p className="text-sm leading-relaxed">{message.content}</p>
+                            </div>
+                            
+                            <div className={`flex items-center mt-1 text-xs text-gray-500 ${
+                              isCurrentUserMessage ? 'justify-end' : 'justify-start'
+                            }`}>
+                              <span>{formatTimestamp(message.created_at)}</span>
+                              {isCurrentUserMessage && (
+                                <div className="ml-2 flex items-center">
+                                  {message.is_read ? (
+                                    <FaCheckCircle className="h-3 w-3 text-blue-500" title={isArabic ? 'تم القراءة' : 'Read'} />
+                                  ) : (
+                                    <FaCheck className="h-3 w-3 text-gray-400" title={isArabic ? 'تم الإرسال' : 'Sent'} />
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {isCurrentUserMessage && (
+                            <div className="flex-shrink-0 ml-3">
+                              {currentUser?.profile_picture ? (
+                                <img
+                                  src={currentUser.profile_picture}
+                                  alt={currentUser.name || currentUser.email}
+                                  className="h-8 w-8 rounded-full object-cover border border-gray-200"
+                                />
+                              ) : (
+                                <FaUserCircle className="h-8 w-8 text-blue-500" />
+                              )}
+                            </div>
+                          )}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                )}
+                <div ref={messageEndRef} />
+              </div>
+                  
+              {/* Message Input */}
+              <div className="p-4 bg-white border-t border-gray-200">
+                <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+                  <button 
+                    type="button"
+                    className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+                  >
+                    <FaPaperclip className="h-5 w-5" />
+                  </button>
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder={isArabic ? 'اكتب رسالة...' : 'Type a message...'}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-12"
+                      disabled={sending}
+                    />
+                    <button 
+                      type="button"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <FaRegSmile className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!newMessage.trim() || sending}
+                    className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {sending ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                    ) : (
+                      <FaPaperPlane className="h-5 w-5" />
+                    )}
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-gray-50">
+              <div className="text-center">
+                <FaComments className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {isArabic ? 'اختر محادثة للبدء' : 'Select a conversation to start'}
+                </h3>
+                <p className="text-gray-500">
+                  {isArabic 
+                    ? 'اختر محادثة من القائمة للبدء في المراسلة'
+                    : 'Choose a conversation from the list to start messaging'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Error Toast */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50"
+          >
+            <div className="flex items-center">
+              <span className="mr-2">{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-white hover:text-gray-200"
+              >
+                <FaTimes className="h-4 w-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </>
+  );
+};
+
+export default MessagesPage; 

@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Helmet } from 'react-helmet';
 
 // Providers
+import { AuthProvider } from './hooks/useAuth';
 import { LanguageProvider } from './hooks/useLanguage';
 import { DarkModeProvider } from './hooks/useDarkMode';
+import { NotificationProvider } from './context/NotificationContext';
 
 // Layout
 import MainLayout from './components/layout/MainLayout';
@@ -26,9 +28,11 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import SearchPage from './pages/SearchPage';
-import ProProfilePage from './pages/ProProfilePage';
+import ProfessionalDetailPage from './pages/ProfessionalDetailPage';
 import ServiceDetailPage from './pages/ServiceDetailPage';
 import ServiceRequestPage from './pages/ServiceRequestPage';
+import ServiceRequestsManagementPage from './pages/ServiceRequestsManagementPage';
+import ClientServiceRequestsPage from './pages/ClientServiceRequestsPage';
 import BookingPage from './pages/BookingPage';
 import BookingConfirmationPage from './pages/BookingConfirmationPage';
 import AppointmentsPage from './pages/AppointmentsPage';
@@ -66,6 +70,7 @@ import ProOnboardingPage from './pages/ProOnboardingPage';
 import NotFoundPage from './pages/NotFoundPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import EscrowFundingPage from './pages/EscrowFundingPage';
+import CreateQuotePage from './pages/CreateQuotePage';
 
 // Auth & Protected Routes
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -86,8 +91,10 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <AuthProvider>
       <DarkModeProvider>
         <LanguageProvider>
+            <NotificationProvider>
       <Router>
             <LayoutProvider>
         <Helmet>
@@ -157,7 +164,7 @@ function App() {
           </Route>
           
           {/* Professional Profile Route - Separate from MainLayout to avoid duplicate navbar */}
-          <Route path="pros/:id" element={<ProProfilePage />} />
+                    <Route path="pros/:id" element={<ProfessionalDetailPage />} />
           <Route path="pro/:id" element={<Navigate to="../pros/:id" replace />} />
           
           {/* Role-based Dashboard Redirector */}
@@ -171,6 +178,7 @@ function App() {
           }>
             <Route index element={<ClientDashboardPage />} />
             <Route path="new-request" element={<ServiceRequestPage />} />
+            <Route path="service-requests" element={<ClientServiceRequestsPage />} />
             <Route path="profile" element={<ProfileEditPage />} />
             <Route path="messages" element={<MessagesPage />} />
             <Route path="messages/:conversationId" element={<MessagesPage />} />
@@ -194,6 +202,7 @@ function App() {
             <Route path="profile" element={<ProProfileEditPage />} />
             <Route path="messages" element={<MessagesPage isPro={true} />} />
             <Route path="messages/:conversationId" element={<MessagesPage isPro={true} />} />
+            <Route path="service-requests" element={<ServiceRequestsManagementPage />} />
             <Route path="reviews" element={<ProReviewsPage />} />
             <Route path="notifications" element={<ProNotificationsPage />} />
             <Route path="settings" element={<SettingsPage isPro={true} />} />
@@ -202,6 +211,7 @@ function App() {
             <Route path="clients" element={<ProClientsPage />} />
             <Route path="services" element={<ProServicesPage />} />
             <Route path="availability" element={<ProAvailabilityPage />} />
+            <Route path="quotes/create" element={<CreateQuotePage />} />
           </Route>
           
           {/* Specialist Dashboard Routes */}
@@ -214,6 +224,7 @@ function App() {
             <Route path="profile" element={<ProfileEditPage />} />
             <Route path="messages" element={<MessagesPage isPro={true} />} />
             <Route path="messages/:conversationId" element={<MessagesPage isPro={true} />} />
+            <Route path="service-requests" element={<ServiceRequestsManagementPage />} />
             <Route path="reviews" element={<ProReviewsPage />} />
             <Route path="notifications" element={<ProNotificationsPage />} />
             <Route path="settings" element={<SettingsPage isPro={true} />} />
@@ -222,6 +233,7 @@ function App() {
             <Route path="clients" element={<ProClientsPage />} />
             <Route path="services" element={<ProServicesPage />} />
             <Route path="availability" element={<ProAvailabilityPage />} />
+            <Route path="quotes/create" element={<CreateQuotePage />} />
           </Route>
           
           {/* Crew Dashboard Routes */}
@@ -234,6 +246,7 @@ function App() {
             <Route path="profile" element={<ProfileEditPage />} />
             <Route path="messages" element={<MessagesPage isPro={true} />} />
             <Route path="messages/:conversationId" element={<MessagesPage isPro={true} />} />
+            <Route path="service-requests" element={<ServiceRequestsManagementPage />} />
             <Route path="reviews" element={<ProReviewsPage />} />
             <Route path="notifications" element={<ProNotificationsPage />} />
             <Route path="settings" element={<SettingsPage isPro={true} />} />
@@ -242,6 +255,7 @@ function App() {
             <Route path="clients" element={<ProClientsPage />} />
             <Route path="services" element={<ProServicesPage />} />
             <Route path="availability" element={<ProAvailabilityPage />} />
+            <Route path="quotes/create" element={<CreateQuotePage />} />
           </Route>
           
           {/* 404 - Page Not Found */}
@@ -249,8 +263,10 @@ function App() {
         </Routes>
             </LayoutProvider>
       </Router>
+            </NotificationProvider>
         </LanguageProvider>
       </DarkModeProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

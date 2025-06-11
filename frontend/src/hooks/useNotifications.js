@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { notificationService } from '../services/api';
+import { notificationService, messagingService } from '../services/api';
 import { useAuth } from './useAuth';
 
 /**
@@ -10,284 +10,287 @@ const useNotifications = () => {
   const { currentUser, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastFetchTime, setLastFetchTime] = useState(null);
   
-  // Real-time polling interval
-  const pollingInterval = useRef(null);
-  const POLLING_INTERVAL_MS = 30000; // 30 seconds
+  const wsRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
 
-  // Fetch notifications
-  const fetchNotifications = useCallback(async (silent = false) => {
+  // Fetch notifications from API
+  const fetchNotifications = useCallback(async () => {
     if (!isAuthenticated) return;
-    
-    if (!silent) setLoading(true);
-    setError(null);
 
     try {
+      setLoading(true);
       const response = await notificationService.getNotifications();
-      const data = response.data;
+      const notificationsData = response.data.results || response.data || [];
+      setNotifications(notificationsData);
       
-      if (data.results) {
-        setNotifications(data.results);
-        setUnreadCount(data.unread_count || data.results.filter(n => !n.read && !n.is_read).length);
-      } else if (Array.isArray(data)) {
-        setNotifications(data);
-        setUnreadCount(data.filter(n => !n.read && !n.is_read).length);
-      }
+      // Calculate unread count
+      const unread = notificationsData.filter(n => !n.read).length;
+      setUnreadCount(unread);
       
-      setLastFetchTime(new Date());
+      setError(null);
     } catch (err) {
-      console.error('Failed to fetch notifications:', err);
-      if (!silent) {
+      console.error('Error fetching notifications:', err);
         setError('Failed to load notifications');
-      }
-      
-      // Fallback to mock data in development
-      if (process.env.NODE_ENV === 'development') {
-        const mockNotifications = generateMockNotifications();
-        setNotifications(mockNotifications);
-        setUnreadCount(mockNotifications.filter(n => !n.read && !n.is_read).length);
-      }
     } finally {
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
   }, [isAuthenticated]);
 
+  // Connect to WebSocket for real-time notifications
+  const connectWebSocket = useCallback(() => {
+    if (!isAuthenticated || !currentUser) return;
+
+    try {
+      const wsUrl = messagingService.getWebSocketUrl();
+      const token = localStorage.getItem('token');
+      
+      // Add authentication token to WebSocket URL
+      const wsUrlWithAuth = `${wsUrl}?token=${token}`;
+      
+      wsRef.current = new WebSocket(wsUrlWithAuth);
+
+      wsRef.current.onopen = () => {
+        console.log('WebSocket connected for notifications');
+        reconnectAttemptsRef.current = 0;
+        
+        // Subscribe to user's notification channel
+        wsRef.current.send(JSON.stringify({
+          type: 'subscribe',
+          channel: `notifications_${currentUser.id}`
+        }));
+      };
+
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'notification') {
+            // Add new notification to the list
+            const newNotification = data.notification;
+            setNotifications(prev => [newNotification, ...prev]);
+            setUnreadCount(prev => prev + 1);
+            
+            // Show browser notification if permitted
+            if (Notification.permission === 'granted') {
+              showBrowserNotification(newNotification);
+            }
+            
+            // Play notification sound
+            playNotificationSound();
+          } else if (data.type === 'notification_read') {
+            // Update notification as read
+            const notificationId = data.notification_id;
+            setNotifications(prev => prev.map(n => 
+              n.id === notificationId ? { ...n, read: true, read_at: new Date().toISOString() } : n
+            ));
+            setUnreadCount(prev => Math.max(0, prev - 1));
+          } else if (data.type === 'notification_deleted') {
+            // Remove deleted notification
+            const notificationId = data.notification_id;
+            setNotifications(prev => prev.filter(n => n.id !== notificationId));
+            // Update unread count if the deleted notification was unread
+            const wasUnread = notifications.find(n => n.id === notificationId && !n.read);
+            if (wasUnread) {
+              setUnreadCount(prev => Math.max(0, prev - 1));
+            }
+          }
+        } catch (err) {
+          console.error('Error processing WebSocket message:', err);
+        }
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      wsRef.current.onclose = () => {
+        console.log('WebSocket disconnected');
+        
+        // Attempt to reconnect with exponential backoff
+        if (reconnectAttemptsRef.current < 5) {
+          const timeout = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            reconnectAttemptsRef.current++;
+            connectWebSocket();
+          }, timeout);
+        }
+      };
+    } catch (err) {
+      console.error('Error connecting to WebSocket:', err);
+    }
+  }, [isAuthenticated, currentUser, notifications]);
+
+  // Disconnect WebSocket
+  const disconnectWebSocket = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Show browser notification
+  const showBrowserNotification = (notification) => {
+    const notificationConfig = {
+      MESSAGE: { icon: '💬', title: 'New Message' },
+      APPOINTMENT: { icon: '📅', title: 'Appointment Update' },
+      PAYMENT: { icon: '💰', title: 'Payment Update' },
+      REVIEW: { icon: '⭐', title: 'New Review' },
+      SYSTEM: { icon: '🔔', title: 'System Notification' }
+    };
+
+    const config = notificationConfig[notification.notification_type] || notificationConfig.SYSTEM;
+    
+    new Notification(config.title, {
+      body: notification.message,
+      icon: '/logo192.png', // Your app icon
+      badge: '/logo192.png',
+      tag: `notification-${notification.id}`,
+      requireInteraction: false,
+      silent: false
+    });
+  };
+
+  // Play notification sound
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('/notification-sound.mp3'); // Add this sound file to your public folder
+      audio.volume = 0.5;
+      audio.play().catch(err => console.log('Could not play notification sound:', err));
+    } catch (err) {
+      console.log('Error playing notification sound:', err);
+    }
+  };
+
+  // Request browser notification permission
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    }
+    return Notification.permission === 'granted';
+  };
+
   // Mark notification as read
-  const markAsRead = useCallback(async (notificationId) => {
+  const markAsRead = async (notificationId) => {
     try {
       await notificationService.markAsRead(notificationId);
       
       // Update local state
-      setNotifications(prev => 
-        prev.map(notification => 
-          notification.id === notificationId 
-            ? { ...notification, read: true, is_read: true, read_at: new Date().toISOString() }
-            : notification
-        )
-      );
-      
-      // Update unread count
+      setNotifications(prev => prev.map(n => 
+        n.id === notificationId ? { ...n, read: true, read_at: new Date().toISOString() } : n
+      ));
       setUnreadCount(prev => Math.max(0, prev - 1));
       
-      return true;
+      // Send WebSocket update
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'mark_read',
+          notification_id: notificationId
+        }));
+      }
     } catch (err) {
-      console.error('Failed to mark notification as read:', err);
-      return false;
+      console.error('Error marking notification as read:', err);
+      throw err;
     }
-  }, []);
+  };
 
-  // Mark all as read
-  const markAllAsRead = useCallback(async () => {
+  // Mark all notifications as read
+  const markAllAsRead = async () => {
     try {
       await notificationService.markAllAsRead();
       
       // Update local state
-      setNotifications(prev => 
-        prev.map(notification => ({ 
-          ...notification, 
-          read: true, 
-          is_read: true, 
-          read_at: new Date().toISOString() 
-        }))
-      );
-      
+      setNotifications(prev => prev.map(n => ({ ...n, read: true, read_at: new Date().toISOString() })));
       setUnreadCount(0);
-      return true;
+      
+      // Send WebSocket update
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'mark_all_read'
+        }));
+      }
     } catch (err) {
-      console.error('Failed to mark all notifications as read:', err);
-      return false;
+      console.error('Error marking all as read:', err);
+      throw err;
     }
-  }, []);
+  };
 
   // Delete notification
-  const deleteNotification = useCallback(async (notificationId) => {
+  const deleteNotification = async (notificationId) => {
     try {
-      await notificationService.deleteNotification(notificationId);
+      // Check if this is a messaging notification or general notification
+      const notification = notifications.find(n => n.id === notificationId);
+      if (notification?.notification_type === 'MESSAGE') {
+        await messagingService.deleteNotification(notificationId);
+      } else {
+        // For now, just remove from UI
+        // Add delete endpoint when available
+      }
       
       // Update local state
-      const deletedNotification = notifications.find(n => n.id === notificationId);
+      const wasUnread = notifications.find(n => n.id === notificationId && !n.read);
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      
-      // Update unread count if deleted notification was unread
-      if (deletedNotification && !deletedNotification.read && !deletedNotification.is_read) {
+      if (wasUnread) {
         setUnreadCount(prev => Math.max(0, prev - 1));
       }
       
-      return true;
+      // Send WebSocket update
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'delete_notification',
+          notification_id: notificationId
+        }));
+      }
     } catch (err) {
-      console.error('Failed to delete notification:', err);
-      return false;
+      console.error('Error deleting notification:', err);
+      throw err;
     }
-  }, [notifications]);
-
-  // Add new notification (for real-time updates)
-  const addNotification = useCallback((notification) => {
-    setNotifications(prev => [notification, ...prev]);
-    
-    if (!notification.read && !notification.is_read) {
-      setUnreadCount(prev => prev + 1);
-    }
-  }, []);
-
-  // Get notifications by type
-  const getNotificationsByType = useCallback((type) => {
-    return notifications.filter(n => n.type === type || n.notification_type === type);
-  }, [notifications]);
-
-  // Get unread notifications
-  const getUnreadNotifications = useCallback(() => {
-    return notifications.filter(n => !n.read && !n.is_read);
-  }, [notifications]);
-
-  // Get recent notifications (last 24 hours)
-  const getRecentNotifications = useCallback(() => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    return notifications.filter(n => {
-      const notificationDate = new Date(n.created_at || n.timestamp);
-      return notificationDate >= yesterday;
-    });
-  }, [notifications]);
-
-  // Start real-time polling
-  const startPolling = useCallback(() => {
-    if (!isAuthenticated) return;
-    
-    stopPolling(); // Clear any existing interval
-    
-    pollingInterval.current = setInterval(() => {
-      fetchNotifications(true); // Silent fetch
-    }, POLLING_INTERVAL_MS);
-  }, [isAuthenticated, fetchNotifications]);
-
-  // Stop real-time polling
-  const stopPolling = useCallback(() => {
-    if (pollingInterval.current) {
-      clearInterval(pollingInterval.current);
-      pollingInterval.current = null;
-    }
-  }, []);
-
-  // Initialize and setup polling
-  useEffect(() => {
-    if (isAuthenticated && currentUser) {
-      fetchNotifications();
-      startPolling();
-    } else {
-      setNotifications([]);
-      setUnreadCount(0);
-      stopPolling();
-    }
-
-    return () => {
-      stopPolling();
-    };
-  }, [isAuthenticated, currentUser, fetchNotifications, startPolling, stopPolling]);
-
-  // Handle page visibility change to refresh notifications
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && isAuthenticated) {
-        // Page became visible, fetch latest notifications
-        fetchNotifications(true);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [isAuthenticated, fetchNotifications]);
-
-  // Generate mock notifications for development
-  const generateMockNotifications = () => {
-    const now = new Date();
-    return [
-      {
-        id: 1,
-        type: 'appointment',
-        notification_type: 'APPOINTMENT',
-        title: 'New Appointment Booked',
-        message: 'You have a new plumbing appointment scheduled for tomorrow at 2:00 PM',
-        created_at: new Date(now - 1000 * 60 * 30).toISOString(), // 30 minutes ago
-        read: false,
-        is_read: false,
-        priority: 'high'
-      },
-      {
-        id: 2,
-        type: 'payment',
-        notification_type: 'PAYMENT',
-        title: 'Payment Received',
-        message: 'You received a payment of $150.00 for electrical work',
-        created_at: new Date(now - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-        read: false,
-        is_read: false,
-        priority: 'medium'
-      },
-      {
-        id: 3,
-        type: 'message',
-        notification_type: 'MESSAGE',
-        title: 'New Message',
-        message: 'You have a new message from Sarah Ahmed',
-        created_at: new Date(now - 1000 * 60 * 60 * 4).toISOString(), // 4 hours ago
-        read: true,
-        is_read: true,
-        priority: 'normal'
-      },
-      {
-        id: 4,
-        type: 'review',
-        notification_type: 'REVIEW',
-        title: 'New Review Received',
-        message: 'Ahmed Mohamed left you a 5-star review!',
-        created_at: new Date(now - 1000 * 60 * 60 * 24).toISOString(), // 1 day ago
-        read: true,
-        is_read: true,
-        priority: 'normal'
-      },
-      {
-        id: 5,
-        type: 'system',
-        notification_type: 'SYSTEM',
-        title: 'Profile Updated',
-        message: 'Your professional profile has been successfully updated',
-        created_at: new Date(now - 1000 * 60 * 60 * 24 * 2).toISOString(), // 2 days ago
-        read: true,
-        is_read: true,
-        priority: 'low'
-      }
-    ];
   };
 
+  // Initialize
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchNotifications();
+      connectWebSocket();
+      requestNotificationPermission();
+    }
+
+    return () => {
+      disconnectWebSocket();
+    };
+  }, [isAuthenticated, connectWebSocket, disconnectWebSocket, fetchNotifications]);
+
+  // Auto-refresh notifications every 5 minutes
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchNotifications]);
+
   return {
-    // State
     notifications,
     unreadCount,
     loading,
     error,
     lastFetchTime,
-    
-    // Actions
-    fetchNotifications,
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    addNotification,
-    
-    // Utilities
-    getNotificationsByType,
-    getUnreadNotifications,
-    getRecentNotifications,
-    
-    // Real-time controls
-    startPolling,
-    stopPolling
+    refetch: fetchNotifications,
+    isConnected: wsRef.current?.readyState === WebSocket.OPEN
   };
 };
 

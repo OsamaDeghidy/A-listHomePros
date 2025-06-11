@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { proService, serviceService } from '../services/api';
-import { FaList, FaMapMarked, FaFilter, FaSearch, FaUserTie, FaToolbox, FaUsers } from 'react-icons/fa';
+import { alistProsService } from '../services/api';
+import { FaList, FaMapMarked, FaFilter, FaSearch, FaUserTie } from 'react-icons/fa';
 import SearchFilters from '../components/search/SearchFilters';
 import ProsList from '../components/search/ProsList';
 import ProsMap from '../components/search/ProsMap';
 import { useLanguage } from '../hooks/useLanguage';
-import professionalService from '../services/professionalService';
 
 const SearchPage = () => {
   const location = useLocation();
@@ -21,12 +20,14 @@ const SearchPage = () => {
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'map'
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState('professionals'); // Only 'professionals' mode now
 
   // Extract search params from URL if any
   const searchParams = new URLSearchParams(location.search);
   const initialLocation = searchParams.get('location') || '';
   const initialService = searchParams.get('service') || '';
   const initialServiceName = searchParams.get('name') || '';
+  
   const initialFilters = {
     location: initialLocation,
     category: initialService,
@@ -100,9 +101,9 @@ const SearchPage = () => {
         params.availability = filters.availability.join(',');
       }
 
-      // Call API
+      // Always search for professionals only
       console.log('Fetching professionals with params:', params);
-      const response = await proService.searchPros(params);
+      const response = await alistProsService.getProfiles(params);
 
       if (response && response.data) {
         console.log('Search API Response:', response.data);
@@ -131,7 +132,7 @@ const SearchPage = () => {
       console.error('Error fetching search results:', err);
       const errorMessage = err.response?.data?.message || 
                           err.response?.data?.detail || 
-                          'Failed to load search results. Please try again later.';
+                          'Failed to load professionals. Please try again later.';
 
       setError(errorMessage);
       // Reset results on error
@@ -335,13 +336,18 @@ const SearchPage = () => {
                         ? (language === 'ar' 
                             ? `${initialFilters.categoryName} - نتائج البحث` 
                             : `${initialFilters.categoryName} - Search Results`)
-                        : (language === 'ar' ? 'نتائج البحث' : 'Search Results')
+                        : (language === 'ar' ? 'البحث عن المحترفين' : 'Search Professionals')
                       }
                     </h1>
                     <p className="text-gray-600 mt-1">
                       {language === 'ar' 
                         ? 'استعرض محترفين مصنفين بتقييمات عالية وجد الشخص المناسب لمشروعك'
-                        : 'Browse highly-rated pros and find the perfect match for your project'
+                        : 'Browse highly-rated pros and find the perfect match for your project'}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {language === 'ar' 
+                        ? `تم العثور على ${totalResults} محترف` 
+                        : `Found ${totalResults} professionals`
                       }
                     </p>
                   </div>

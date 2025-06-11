@@ -136,6 +136,7 @@ class Message(TimeStampedModel):
             ('FILE', 'File'),
             ('LOCATION', 'Location'),
             ('SYSTEM', 'System Message'),
+            ('QUOTE', 'Quote Message'),
         ],
         default='TEXT'
     )

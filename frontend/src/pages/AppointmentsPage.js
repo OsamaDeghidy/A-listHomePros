@@ -12,7 +12,9 @@ import {
   FaCheckCircle,
   FaExclamationTriangle,
   FaInfoCircle,
-  FaEdit
+  FaEdit,
+  FaPlus,
+  FaSearch
 } from 'react-icons/fa';
 import { schedulingService, messagingService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -158,14 +160,74 @@ const AppointmentsPage = () => {
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              {isArabic ? 'مواعيدي' : 'My Appointments'}
-            </h1>
-            <p className="text-gray-600">
-              {isArabic 
-                ? 'عرض وإدارة جميع مواعيدك مع مقدمي الخدمات'
-                : 'View and manage all your appointments with service providers'}
-            </p>
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                  {isArabic ? 'مواعيدي' : 'My Appointments'}
+                </h1>
+                <p className="text-gray-600">
+                  {isArabic 
+                    ? 'عرض وإدارة جميع مواعيدك مع مقدمي الخدمات'
+                    : 'View and manage all your appointments with service providers'}
+                </p>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link 
+                  to="/search"
+                  className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 shadow-md"
+                >
+                  <FaSearch className="mr-2" />
+                  {isArabic ? 'ابحث عن محترفين' : 'Find Professionals'}
+                </Link>
+                
+                <div className="relative group">
+                  <button className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300 shadow-md">
+                    <FaPlus className="mr-2" />
+                    {isArabic ? 'حجز موعد جديد' : 'Book New Appointment'}
+                  </button>
+                  
+                  {/* Dropdown for quick booking */}
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                    <div className="p-4">
+                      <h3 className="text-sm font-medium text-gray-900 mb-3">
+                        {isArabic ? 'خيارات الحجز السريع' : 'Quick Booking Options'}
+                      </h3>
+                      <div className="space-y-2">
+                        <Link 
+                          to="/search"
+                          className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition duration-200"
+                        >
+                          <FaSearch className="inline mr-2 text-green-500" />
+                          {isArabic ? 'ابحث عن محترف جديد' : 'Find a new professional'}
+                        </Link>
+                        
+                        {/* Show quick re-book options for recent professionals */}
+                        {appointments.slice(0, 2).map((appointment) => (
+                          <Link 
+                            key={appointment.id}
+                            to={`/booking/${appointment.alistpro?.id}`}
+                            className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition duration-200"
+                          >
+                            <FaCalendarAlt className="inline mr-2 text-blue-500" />
+                            {isArabic ? 'احجز مرة أخرى مع ' : 'Book again with '}
+                            {appointment.alistpro?.business_name?.substring(0, 20) || (isArabic ? 'محترف' : 'Professional')}
+                            {appointment.alistpro?.business_name?.length > 20 ? '...' : ''}
+                          </Link>
+                        ))}
+                        
+                        {appointments.length === 0 && (
+                          <p className="text-xs text-gray-500 italic px-3">
+                            {isArabic ? 'لا توجد مواعيد سابقة' : 'No previous appointments'}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Filter Tabs */}
@@ -218,19 +280,40 @@ const AppointmentsPage = () => {
             <div className="text-center py-12">
               <FaCalendarAlt className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {isArabic ? 'لا توجد مواعيد' : 'No appointments found'}
+                {filter === 'all' 
+                  ? (isArabic ? 'لا توجد مواعيد' : 'No appointments found')
+                  : (isArabic ? `لا توجد مواعيد ${filter === 'upcoming' ? 'قادمة' : filter === 'completed' ? 'مكتملة' : 'ملغية'}` 
+                    : `No ${filter} appointments found`)
+                }
               </h3>
               <p className="text-gray-500 mb-6">
-                {isArabic 
-                  ? 'لم تقم بحجز أي مواعيد حتى الآن'
-                  : "You haven't booked any appointments yet"}
+                {filter === 'all'
+                  ? (isArabic 
+                      ? 'لم تقم بحجز أي مواعيد حتى الآن. ابدأ بالبحث عن محترفي الخدمات المنزلية'
+                      : "You haven't booked any appointments yet. Start by finding home service professionals")
+                  : (isArabic
+                      ? `لا توجد مواعيد ${filter === 'upcoming' ? 'قادمة' : filter === 'completed' ? 'مكتملة' : 'ملغية'} حالياً`
+                      : `No ${filter} appointments at the moment`)
+                }
               </p>
-              <Link 
-                to="/search"
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300"
-              >
-                {isArabic ? 'ابحث عن محترفين' : 'Find Professionals'}
-              </Link>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link 
+                  to="/search"
+                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition duration-300 shadow-md"
+                >
+                  <FaSearch className="mr-2" />
+                  {isArabic ? 'ابحث عن محترفين' : 'Find Professionals'}
+                </Link>
+                
+                <Link 
+                  to="/pros"
+                  className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 shadow-md"
+                >
+                  <FaUser className="mr-2" />
+                  {isArabic ? 'تصفح المحترفين' : 'Browse Professionals'}
+                </Link>
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
@@ -325,6 +408,15 @@ const AppointmentsPage = () => {
                           <FaComments className="mr-1" />
                           {isArabic ? 'رسالة' : 'Message'}
                         </button>
+
+                        {/* Book Again Button */}
+                        <Link
+                          to={`/booking/${appointment.alistpro?.id}`}
+                          className="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition duration-300"
+                        >
+                          <FaPlus className="mr-1" />
+                          {isArabic ? 'احجز مرة أخرى' : 'Book Again'}
+                        </Link>
 
                         {/* Cancel Button (only for upcoming appointments) */}
                         {['requested', 'confirmed'].includes(appointment.status?.toLowerCase()) && (

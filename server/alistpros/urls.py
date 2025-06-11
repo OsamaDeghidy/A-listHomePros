@@ -21,7 +21,6 @@ from drf_yasg import openapi
 from users.views import RegisterView, CustomTokenObtainPairView, UserProfileView
 from alistpros_profiles.views import AListHomeProProfileViewSet, ServiceCategoryListView, AListHomeProReviewViewSet
 from scheduling.views import AppointmentViewSet
-from messaging.views import ConversationViewSet, MessageViewSet, NotificationViewSet as MessagingNotificationViewSet
 from notifications.views import NotificationViewSet, NotificationSettingViewSet
 
 # Initialize router
@@ -42,9 +41,7 @@ router.register(r'scheduling/appointments', AppointmentViewSet, basename='appoin
 # router.register(r'payments/payment-intents', PaymentIntentViewSet, basename='payment-intent')
 # router.register(r'payments/payment-methods', PaymentMethodViewSet, basename='payment-method')
 # router.register(r'payments/transactions', TransactionViewSet, basename='transaction')
-router.register(r'messaging/conversations', ConversationViewSet, basename='conversation')
-router.register(r'messaging/messages', MessageViewSet, basename='message')
-router.register(r'messaging/notifications', MessagingNotificationViewSet, basename='messaging-notification')
+# Messaging routes are handled by messaging.urls - no need to register here
 router.register(r'notifications/notifications', NotificationViewSet, basename='notification')
 router.register(r'notifications/settings', NotificationSettingViewSet, basename='notification-settings')
 
@@ -90,6 +87,7 @@ urlpatterns = [
     path('api/payments/', include('payments.urls')),
     path('api/messaging/', include('messaging.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/core/', include('core.urls')),
 ]
 
 # Serve media files in development

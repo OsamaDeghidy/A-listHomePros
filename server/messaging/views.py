@@ -33,6 +33,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Get conversations for current user with optimizations"""
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Conversation.objects.none()
+        
         return Conversation.objects.filter(
             participants=self.request.user
         ).prefetch_related(
@@ -43,8 +47,6 @@ class ConversationViewSet(viewsets.ModelViewSet):
                 queryset=Message.objects.select_related('sender').order_by('-created_at')[:1],
                 to_attr='latest_messages'
             )
-        ).annotate(
-            message_count=Count('messages')
         ).order_by('-updated_at')
 
     def get_serializer_class(self):
@@ -261,24 +263,35 @@ class MessageViewSet(viewsets.ModelViewSet):
         if not conversation.participants.filter(id=self.request.user.id).exists():
             raise permissions.PermissionDenied("You are not a participant in this conversation")
         
-        message = serializer.save(conversation=conversation)
+        # Save message with sender and conversation
+        message = serializer.save(
+            conversation=conversation, 
+            sender=self.request.user
+        )
         
         # Mark message as read by sender
         message.read_by.add(self.request.user)
         
         # Update conversation timestamp
-        conversation.updated_at = timezone.now()
-        conversation.save()
+        conversation.update_last_message_time()
         
         # Send notifications to other participants
         other_participants = conversation.participants.exclude(id=self.request.user.id)
         for participant in other_participants:
-            QuickNotifications.new_message(
-                recipient=participant,
-                sender=self.request.user,
-                conversation=conversation,
-                message=message
-            )
+            try:
+                from notifications.utils import create_notification
+                create_notification(
+                    user=participant,
+                    notification_type='MESSAGE',
+                    title=f"New message from {self.request.user.name or self.request.user.email}",
+                    message=message.content[:100] + ('...' if len(message.content) > 100 else ''),
+                    related_object_type='conversation',
+                    related_object_id=conversation.id
+                )
+            except (ImportError, Exception) as e:
+                # Log the error but don't fail the message creation
+                print(f"Failed to create notification for {participant.email}: {e}")
+                pass
 
     @action(detail=True, methods=['post'])
     def mark_read(self, request, conversation_pk=None, pk=None):
@@ -370,6 +383,10 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Get notifications for current user"""
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return Notification.objects.none()
+        
         return Notification.objects.filter(
             user=self.request.user
         ).order_by('-created_at')

@@ -448,6 +448,9 @@ class EscrowAccountDetailView(generics.RetrieveUpdateAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return EscrowAccount.objects.none()
         
         if user.role == 'client':
             return EscrowAccount.objects.filter(client=user)

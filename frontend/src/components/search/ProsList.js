@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FaStar, FaMapMarkerAlt, FaPhone, FaCalendarAlt, FaSearch } from 'react-icons/fa';
+import { FaStar, FaMapMarkerAlt, FaPhone, FaCalendarAlt, FaSearch, FaTags, FaDollarSign } from 'react-icons/fa';
 import { useLanguage } from '../../hooks/useLanguage';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -14,17 +14,81 @@ const ProsList = ({ pros = [] }) => {
 
   const displayPros = pros;
 
-  // Helper function to extract location address from different data structures
-  const getLocationAddress = (pro) => {
+  // Helper function to get full address text
+  const getFullAddress = (pro) => {
+    // First check if there's a full_address field from serializer
+    if (pro.full_address) {
+      return pro.full_address;
+    }
+    
+    // Check if address object exists and has full_address
+    if (pro.address?.full_address) {
+      return pro.address.full_address;
+    }
+    
+    // Build address from individual fields
+    if (pro.address) {
+      const addr = pro.address;
+      const parts = [
+        addr.street_address,
+        addr.city,
+        addr.state,
+        addr.zip_code,
+        addr.country
+      ].filter(part => part && part.trim() !== ''); // Filter out empty parts
+      
+      if (parts.length > 0) {
+        return parts.join(', ');
+      }
+    }
+    
+    // Check for legacy location field
+    if (pro.location) {
     if (typeof pro.location === 'string') {
       return pro.location;
-    } else if (pro.location?.address) {
+      } else if (pro.location.address) {
       return pro.location.address;
-    } else if (pro.address) {
-      return pro.address;
-    } else {
-      return language === 'ar' ? 'موقع غير محدد' : 'Location not specified';
+      }
     }
+    
+    return language === 'ar' ? 'العنوان غير محدد' : 'Address not specified';
+  };
+
+  // Helper function to check if pro has real location
+  const hasRealLocation = (pro) => {
+    // Check if professional has direct coordinates
+    if (pro.latitude && pro.longitude && 
+        parseFloat(pro.latitude) !== 0 && parseFloat(pro.longitude) !== 0) {
+      return true;
+    }
+    
+    // Check if address has coordinates
+    if (pro.address?.latitude && pro.address?.longitude &&
+        parseFloat(pro.address.latitude) !== 0 && parseFloat(pro.address.longitude) !== 0) {
+      return true;
+    }
+    
+    // Check if there's any meaningful address information
+    if (pro.address) {
+      const addr = pro.address;
+      if ((addr.street_address && addr.street_address.trim()) ||
+          (addr.city && addr.city.trim()) ||
+          (addr.state && addr.state.trim())) {
+        return true;
+      }
+    }
+    
+    // Check for full_address field
+    if (pro.full_address && pro.full_address.trim()) {
+      return true;
+    }
+    
+    // Check legacy location
+    if (pro.location && pro.location !== 'غير محدد' && pro.location !== 'Location not specified') {
+      return true;
+    }
+    
+    return false;
   };
 
   // Helper function to get the profile image URL
@@ -65,6 +129,87 @@ const ProsList = ({ pros = [] }) => {
     return pro.review_count || pro.reviews || 0;
   };
 
+  // Helper function to get professional role
+  const getProRole = (pro) => {
+    const role = pro.user?.role || pro.role;
+    const roleNames = {
+      'contractor': language === 'ar' ? 'مقاول' : 'Contractor',
+      'specialist': language === 'ar' ? 'متخصص' : 'Specialist', 
+      'crew': language === 'ar' ? 'طاقم عمل' : 'Crew Member',
+      'professional': language === 'ar' ? 'محترف' : 'Professional'
+    };
+    return roleNames[role] || (language === 'ar' ? 'محترف' : 'Professional');
+  };
+
+  // Helper function to get role color
+  const getRoleColor = (role) => {
+    const colors = {
+      'contractor': 'bg-blue-100 text-blue-800',
+      'specialist': 'bg-green-100 text-green-800',
+      'crew': 'bg-purple-100 text-purple-800',
+      'professional': 'bg-gray-100 text-gray-800'
+    };
+    return colors[role] || 'bg-gray-100 text-gray-800';
+  };
+
+  // Helper function to safely format rating
+  const formatRating = (rating) => {
+    const numericRating = typeof rating === 'number' ? rating : parseFloat(rating) || 0;
+    return numericRating.toFixed(1);
+  };
+
+  // Helper function to get hourly rate
+  const getHourlyRate = (pro) => {
+    return pro.hourly_rate || pro.rate || null;
+  };
+
+  // Helper function to format hourly rate
+  const formatHourlyRate = (rate) => {
+    if (!rate) return null;
+    const numericRate = typeof rate === 'number' ? rate : parseFloat(rate);
+    if (isNaN(numericRate) || numericRate <= 0) return null;
+    
+    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(numericRate);
+  };
+
+  // Helper function to get service categories
+  const getServiceCategories = (pro) => {
+    if (pro.service_categories && Array.isArray(pro.service_categories)) {
+      return pro.service_categories;
+    }
+    // Check if there's a single category
+    if (pro.category) {
+      return [{ name: pro.category }];
+    }
+    if (pro.profession) {
+      return [{ name: pro.profession }];
+    }
+    return [];
+  };
+
+  // Generate star rating display
+  const renderStars = (rating) => {
+    // Ensure rating is a valid number
+    const numericRating = typeof rating === 'number' ? rating : parseFloat(rating) || 0;
+    
+    return (
+      <div className="flex items-center">
+        {[...Array(5)].map((_, i) => (
+          <FaStar 
+            key={i} 
+            className={`w-4 h-4 ${i < Math.floor(numericRating) ? 'text-yellow-500' : 'text-gray-300'}`} 
+          />
+        ))}
+        <span className="ml-1 text-sm font-medium text-gray-700">{numericRating.toFixed(1)}</span>
+      </div>
+    );
+  };
+
   // Sort pros based on selected criteria
   const sortedPros = [...displayPros].sort((a, b) => {
     if (sortBy === 'rating') {
@@ -78,19 +223,6 @@ const ProsList = ({ pros = [] }) => {
       return nameA.localeCompare(nameB);
     }
   });
-
-  // Generate star rating display
-  const renderStars = (rating) => (
-    <div className="flex items-center">
-      {[...Array(5)].map((_, i) => (
-        <FaStar 
-          key={i} 
-          className={`w-4 h-4 ${i < Math.floor(rating) ? 'text-yellow-500' : 'text-gray-300'}`} 
-        />
-      ))}
-      <span className="ml-1 text-sm font-medium text-gray-700">{rating.toFixed(1)}</span>
-    </div>
-  );
 
   // Animation variants
   const listContainerVariants = {
@@ -170,19 +302,63 @@ const ProsList = ({ pros = [] }) => {
                     <div>
                       <h3 className="text-xl font-bold">{getProName(pro)}</h3>
                       <p className="text-gray-600">{getProProfession(pro)}</p>
+                      <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full mt-1 ${getRoleColor(pro.user?.role || pro.role)}`}>
+                        {getProRole(pro)}
+                      </span>
                     </div>
-                    <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md">
+                    <div className="text-right">
+                      <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md mb-2">
                       {renderStars(getProRating(pro))}
                       <span className="ml-1 text-sm text-gray-600">({getProReviewCount(pro)} {language === 'ar' ? 'تقييم' : 'reviews'})</span>
+                      </div>
+                      {/* Hourly Rate Display */}
+                      {getHourlyRate(pro) && (
+                        <div className="flex items-center justify-end bg-green-50 px-3 py-1 rounded-md">
+                          <FaDollarSign className="text-green-600 mr-1" />
+                          <span className="text-lg font-bold text-green-700">
+                            {formatHourlyRate(getHourlyRate(pro))}
+                            <span className="text-sm font-normal text-green-600">
+                              /{language === 'ar' ? 'ساعة' : 'hr'}
+                            </span>
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   <div className="flex items-center text-gray-500 mt-2">
                     <FaMapMarkerAlt className="mr-1" />
                     <span>
-                      {pro.location?.address || pro.location || (language === 'ar' ? 'موقع غير محدد' : 'Location not specified')}
+                      {getFullAddress(pro)}
                     </span>
+                    {!hasRealLocation(pro) && (
+                      <span className="inline-block ml-2 px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+                        {language === 'ar' ? 'موقع غير محدد' : 'Location not set'}
+                      </span>
+                    )}
                   </div>
+
+                  {/* Service Categories */}
+                  {getServiceCategories(pro).length > 0 && (
+                    <div className="flex items-center mt-2">
+                      <FaTags className="text-gray-400 mr-2" />
+                      <div className="flex flex-wrap gap-1">
+                        {getServiceCategories(pro).slice(0, 3).map((category, index) => (
+                          <span 
+                            key={index}
+                            className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800"
+                          >
+                            {category.name}
+                          </span>
+                        ))}
+                        {getServiceCategories(pro).length > 3 && (
+                          <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
+                            +{getServiceCategories(pro).length - 3} {language === 'ar' ? 'أكثر' : 'more'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   
                   <p className="mt-3 text-gray-700">
                     {pro.business_description || pro.description || (language === 'ar' ? 'لا يوجد وصف متاح' : 'No description available')}
@@ -249,21 +425,59 @@ const ProsList = ({ pros = [] }) => {
               />
               
               <div className="p-4">
-                <div className="flex justify-between items-start">
-                  <div>
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
                     <h3 className="text-lg font-bold">{getProName(pro)}</h3>
                     <p className="text-gray-600 text-sm">{getProProfession(pro)}</p>
+                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full mt-1 ${getRoleColor(pro.user?.role || pro.role)}`}>
+                      {getProRole(pro)}
+                    </span>
                   </div>
-                  <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md">
+                  <div className="text-right ml-2">
+                    <div className="flex items-center bg-blue-50 px-2 py-1 rounded-md mb-1">
                     <FaStar className="text-yellow-500 w-4 h-4" />
-                    <span className="ml-1 font-semibold">{getProRating(pro).toFixed(1)}</span>
+                      <span className="ml-1 font-semibold">{formatRating(getProRating(pro))}</span>
+                    </div>
+                    {/* Hourly Rate Display */}
+                    {getHourlyRate(pro) && (
+                      <div className="bg-green-50 px-2 py-1 rounded-md">
+                        <span className="text-sm font-bold text-green-700">
+                          {formatHourlyRate(getHourlyRate(pro))}
+                          <span className="text-xs font-normal">/{language === 'ar' ? 'س' : 'hr'}</span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
                 <div className="flex items-center text-gray-500 text-sm mt-1">
                   <FaMapMarkerAlt className="mr-1 w-3 h-3" />
-                  <p>{getLocationAddress(pro)}</p>
+                  <p className="truncate">{getFullAddress(pro)}</p>
+                  {!hasRealLocation(pro) && (
+                    <span className="inline-block ml-1 px-1 py-0.5 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">
+                      ⚠️
+                    </span>
+                  )}
                 </div>
+
+                {/* Service Categories */}
+                {getServiceCategories(pro).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {getServiceCategories(pro).slice(0, 2).map((category, index) => (
+                      <span 
+                        key={index}
+                        className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800"
+                      >
+                        {category.name}
+                      </span>
+                    ))}
+                    {getServiceCategories(pro).length > 2 && (
+                      <span className="inline-block px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
+                        +{getServiceCategories(pro).length - 2}
+                      </span>
+                    )}
+                  </div>
+                )}
                 
                 <p className="mt-2 text-sm line-clamp-2 text-gray-700">
                   {getProDescription(pro)}
@@ -292,7 +506,7 @@ const ProsList = ({ pros = [] }) => {
                     }} 
                     className="flex-1 px-3 py-1.5 text-center text-sm border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition duration-300"
                   >
-                    {language === 'ar' ? 'احجز الآن' : 'Book Now'}
+                    {language === 'ar' ? 'احجز' : 'Book'}
                   </button>
                 </div>
               </div>
@@ -301,17 +515,15 @@ const ProsList = ({ pros = [] }) => {
         </motion.div>
       )}
 
-      {/* Show message if no results */}
+      {/* No Results */}
       {sortedPros.length === 0 && (
-        <div className="bg-white rounded-lg shadow-md p-6 text-center">
+        <div className="text-center py-12">
           <FaSearch className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-lg font-medium text-gray-900">
-            {language === 'ar' ? 'لم يتم العثور على محترفين' : 'No professionals found'}
+          <h3 className="mt-2 text-sm font-medium text-gray-900">
+            {language === 'ar' ? 'لا توجد نتائج' : 'No results found'}
           </h3>
-          <p className="mt-1 text-gray-500">
-            {language === 'ar' 
-              ? 'حاول تعديل معايير البحث الخاصة بك للعثور على المحترفين المناسبين.' 
-              : 'Try adjusting your search criteria to find suitable professionals.'}
+          <p className="mt-1 text-sm text-gray-500">
+            {language === 'ar' ? 'جرب تغيير معايير البحث' : 'Try adjusting your search criteria'}
           </p>
         </div>
       )}

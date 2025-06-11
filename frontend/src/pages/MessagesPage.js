@@ -4,7 +4,8 @@ import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../hooks/useLanguage';
-import { messagingService, alistProsService } from '../services/api';
+import messageService from '../services/messageService';
+import { alistProsService } from '../services/api';
 import { 
   FaInbox, 
   FaUserCircle, 
@@ -26,8 +27,40 @@ import {
   FaUserTag,
   FaStar,
   FaShieldAlt,
-  FaTimes
+  FaTimes,
+  FaFileInvoiceDollar,
+  FaQuoteLeft,
+  FaHandshake,
+  FaTools,
+  FaEnvelope,
+  FaMapMarkerAlt,
+  FaCalendarAlt,
+  FaImage,
+  FaFile,
+  FaMicrophone,
+  FaThumbsUp,
+  FaHeart,
+  FaLaugh,
+  FaSurprise,
+  FaSadTear,
+  FaAngry,
+  FaEdit,
+  FaTrash,
+  FaReply,
+  FaUsers,
+  FaUserPlus,
+  FaArchive,
+  FaDownload
 } from 'react-icons/fa';
+
+const REACTION_ICONS = {
+  '👍': <FaThumbsUp className="text-blue-500" />,
+  '❤️': <FaHeart className="text-red-500" />,
+  '😂': <FaLaugh className="text-yellow-500" />,
+  '😮': <FaSurprise className="text-purple-500" />,
+  '😢': <FaSadTear className="text-blue-400" />,
+  '😠': <FaAngry className="text-red-600" />
+};
 
 const MessagesPage = () => {
   const { conversationId } = useParams();
@@ -47,23 +80,54 @@ const MessagesPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sending, setSending] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState(Date.now());
-  const [newMessageNotifications, setNewMessageNotifications] = useState([]);
   const [participantsInfo, setParticipantsInfo] = useState({});
   const [refreshing, setRefreshing] = useState(false);
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+  
+  // Enhanced states for new features
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [selectedMessages, setSelectedMessages] = useState([]);
+  const [showReactionPicker, setShowReactionPicker] = useState(null);
+  const [showParticipantMenu, setShowParticipantMenu] = useState(false);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [userSearchResults, setUserSearchResults] = useState([]);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [recordingAudio, setRecordingAudio] = useState(false);
+  const [attachmentPreview, setAttachmentPreview] = useState(null);
+
+  // Service Request states
+  const [showServiceRequestModal, setShowServiceRequestModal] = useState(false);
+  const [serviceRequestData, setServiceRequestData] = useState({
+    title: '',
+    description: '',
+    budget_max: '',
+    urgency: 'medium',
+    flexible_schedule: true
+  });
+  const [creatingServiceRequest, setCreatingServiceRequest] = useState(false);
 
   // Refs
   const messageEndRef = useRef(null);
   const chatWindowRef = useRef(null);
   const pollingIntervalRef = useRef(null);
-  const notificationTimeoutRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
+  const audioRecorderRef = useRef(null);
 
   // Auto-refresh interval (30 seconds)
   const POLLING_INTERVAL = 30000;
+  const SHORT_POLLING_INTERVAL = 5000; // 5 seconds for after sending messages
+
+  // Check if current user is a professional
+  const isProfessional = currentUser?.role === 'contractor' || currentUser?.role === 'specialist' || currentUser?.role === 'crew';
 
   // Redirect if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/login?redirect=/dashboard/messages');
+      navigate('/login?redirect=' + encodeURIComponent(window.location.pathname));
       return;
     }
   }, [isAuthenticated, navigate]);
@@ -72,34 +136,126 @@ const MessagesPage = () => {
   useEffect(() => {
     if (isAuthenticated) {
       fetchConversations();
-      
-      // Request notification permission
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            console.log('Notification permission granted');
-          }
-        });
-      }
     }
   }, [isAuthenticated]);
+
+  // Stop polling
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  // Check for new messages - SIMPLIFIED VERSION
+  const checkForNewMessages = useCallback(async () => {
+    if (!activeConversation || sending) {
+      console.log('⏸️ Skipping message check - conversation:', !!activeConversation, 'sending:', sending);
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No token available for message check');
+        return;
+      }
+
+      const response = await messageService.getMessages(token, activeConversation.id);
+      const serverMessages = response.data.results || response.data || [];
+      
+      console.log('📨 Message check - Current:', messages.length, 'Server:', serverMessages.length);
+      
+      // Get current optimistic messages (messages being sent)
+      const optimisticMessages = messages.filter(msg => 
+        typeof msg.id === 'string' && msg.id.startsWith('temp_')
+      );
+      
+      // If we have optimistic messages and server doesn't have them yet, keep them
+      if (optimisticMessages.length > 0) {
+        console.log('📌 Keeping', optimisticMessages.length, 'optimistic messages');
+        
+        // Check if the optimistic messages were successfully sent
+        // by looking for messages with same content in server response
+        const sentOptimisticMessages = optimisticMessages.filter(optMsg => {
+          return serverMessages.some(serverMsg => 
+            serverMsg.content === optMsg.content && 
+            serverMsg.sender.id === optMsg.sender.id &&
+            // Check if server message was created recently (within last 30 seconds)
+            new Date(serverMsg.created_at) > new Date(Date.now() - 30000)
+          );
+        });
+        
+        // Remove optimistic messages that were successfully sent
+        const remainingOptimisticMessages = optimisticMessages.filter(optMsg => {
+          return !sentOptimisticMessages.some(sentMsg => sentMsg.id === optMsg.id);
+        });
+        
+        // Combine server messages with remaining optimistic messages
+        const combinedMessages = [...serverMessages, ...remainingOptimisticMessages];
+        
+        // Sort by created_at to maintain order
+        combinedMessages.sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        
+        setMessages(combinedMessages);
+      } else {
+        // No optimistic messages, safe to update from server
+        setMessages(serverMessages);
+      }
+      
+      setLastFetchTime(Date.now());
+      
+      // Mark conversation as read
+      try {
+        await messageService.markConversationAsRead(token, activeConversation.id);
+        updateConversationReadStatus(activeConversation.id);
+      } catch (markReadErr) {
+        console.error('Error marking conversation as read:', markReadErr);
+      }
+      
+      // Update conversations list
+      await fetchConversationsQuietly();
+      
+    } catch (err) {
+      console.error('❌ Error checking for new messages:', err);
+    }
+  }, [activeConversation?.id, messages, sending]);
+
+  // Start polling for new messages
+  const startPolling = useCallback((shortInterval = false) => {
+    stopPolling();
+    
+    const interval = shortInterval ? SHORT_POLLING_INTERVAL : POLLING_INTERVAL;
+    console.log(`🔄 Starting polling with ${interval/1000}s interval`);
+    
+    pollingIntervalRef.current = setInterval(() => {
+      if (activeConversation && !messagesLoading && !sending) {
+        console.log('🔄 Polling for new messages...');
+        checkForNewMessages();
+      } else {
+        console.log('⏸️ Skipping poll - sending:', sending, 'loading:', messagesLoading);
+      }
+    }, interval);
+  }, [activeConversation?.id, messagesLoading, sending, checkForNewMessages, stopPolling]);
 
   // Handle conversation selection from URL parameter
   useEffect(() => {
     if (conversationId && conversations.length > 0) {
       const conversation = conversations.find(c => c.id === parseInt(conversationId));
-      if (conversation) {
+      if (conversation && (!activeConversation || activeConversation.id !== conversation.id)) {
         handleConversationSelect(conversation);
       }
-    } else if (conversations.length > 0 && !activeConversation) {
-      // Auto-select first conversation if none selected
+    } else if (conversations.length > 0 && !activeConversation && !conversationId) {
+      // Auto-select first conversation if none selected and no conversationId in URL
       handleConversationSelect(conversations[0]);
     }
-  }, [conversationId, conversations]);
+  }, [conversationId, conversations, activeConversation]);
 
   // Auto-scroll to the latest message
   useEffect(() => {
-    if (messageEndRef.current) {
+    if (messageEndRef.current && messages.length > 0) {
       messageEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
@@ -112,145 +268,87 @@ const MessagesPage = () => {
       stopPolling();
     }
 
-    // Cleanup on unmount
     return () => {
       stopPolling();
-      if (notificationTimeoutRef.current) {
-        clearTimeout(notificationTimeoutRef.current);
-      }
     };
-  }, [isAuthenticated, activeConversation]);
-
-  // Start polling for new messages
-  const startPolling = useCallback(() => {
-    stopPolling(); // Clear any existing interval
-    
-    pollingIntervalRef.current = setInterval(() => {
-      if (activeConversation && !messagesLoading && !sending) {
-        checkForNewMessages();
-      }
-    }, POLLING_INTERVAL);
-  }, [activeConversation, messagesLoading, sending]);
-
-  // Stop polling
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  }, []);
-
-  // Check for new messages without showing loading
-  const checkForNewMessages = useCallback(async () => {
-    if (!activeConversation) return;
-
-    try {
-      const response = await messagingService.getMessages(activeConversation.id);
-      const newMessagesData = response.data.results || [];
-      
-      // Check if there are new messages
-      const currentMessageIds = messages.map(m => m.id);
-      const newMessages = newMessagesData.filter(msg => !currentMessageIds.includes(msg.id));
-      
-      if (newMessages.length > 0) {
-        setMessages(newMessagesData);
-        setLastFetchTime(Date.now());
-        
-        // Show notification for new messages from others
-        const messagesFromOthers = newMessages.filter(msg => msg.sender?.id !== currentUser?.id);
-        if (messagesFromOthers.length > 0) {
-          showNewMessageNotification(messagesFromOthers[messagesFromOthers.length - 1]);
-        }
-        
-        // Mark conversation as read
-        try {
-          await messagingService.markConversationAsRead(activeConversation.id);
-          updateConversationReadStatus(activeConversation.id);
-        } catch (markReadErr) {
-          console.error('Error marking conversation as read:', markReadErr);
-        }
-      }
-      
-      // Also update conversations list to get latest timestamps
-      await fetchConversationsQuietly();
-      
-    } catch (err) {
-      console.error('Error checking for new messages:', err);
-    }
-  }, [activeConversation, messages, currentUser]);
+  }, [isAuthenticated, activeConversation?.id, startPolling, stopPolling]);
 
   // Fetch conversations without loading indicator
   const fetchConversationsQuietly = useCallback(async () => {
     try {
-      const response = await messagingService.getConversations();
-      const conversationsData = response.data.results || [];
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No token available for conversations fetch');
+        return;
+      }
+
+      const response = await messageService.getUserConversations(token);
+      const conversationsData = response.data.results || response.data || [];
+      
+      // Debug: طباعة البيانات للتحقق - Print data for debugging
+      console.log('🔍 DEBUG: Conversations data from API:', conversationsData);
+      if (conversationsData.length > 0) {
+        console.log('🔍 DEBUG: Sample conversation structure:', conversationsData[0]);
+      }
+      
+      // Fetch participant info for all conversations
+      for (const conversation of conversationsData) {
+        await fetchParticipantsInfo(conversation);
+      }
+      
       setConversations(conversationsData);
     } catch (err) {
       console.error('Error fetching conversations quietly:', err);
     }
   }, []);
 
-  // Show new message notification
-  const showNewMessageNotification = useCallback((message) => {
-    const notification = {
-      id: Date.now(),
-      message,
-      senderName: getMessageSenderName(message),
-      timestamp: new Date()
-    };
-    
-    setNewMessageNotifications(prev => [...prev, notification]);
-    
-    // Auto-remove notification after 5 seconds
-    setTimeout(() => {
-      setNewMessageNotifications(prev => prev.filter(n => n.id !== notification.id));
-    }, 5000);
-    
-    // Browser notification if supported and permitted
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(`${notification.senderName}`, {
-        body: message.content,
-        icon: '/logo192.png',
-        badge: '/logo192.png'
-      });
-    }
-  }, []);
-
-  // Get sender name for message
-  const getMessageSenderName = useCallback((message) => {
-    if (!message.sender) return isArabic ? 'مستخدم' : 'User';
-    
-    const participantInfo = participantsInfo[message.sender.id];
-    if (participantInfo) {
-      return participantInfo.business_name || 
-             `${participantInfo.user?.first_name || ''} ${participantInfo.user?.last_name || ''}`.trim() ||
-             participantInfo.user?.name ||
-             participantInfo.user?.email ||
-             (isArabic ? 'مستخدم' : 'User');
+  // Fetch participant info for a conversation (now simplified since we get other_participant from API)
+  const fetchParticipantsInfo = useCallback(async (conversation) => {
+    // Skip if we already have other_participant data from ConversationListSerializer
+    if (conversation.other_participant) {
+      console.log('🔍 DEBUG: Skipping fetchParticipantsInfo - already have other_participant data');
+      return;
     }
     
-    return `${message.sender.first_name || ''} ${message.sender.last_name || ''}`.trim() ||
-           message.sender.name ||
-           message.sender.email ||
-           (isArabic ? 'مستخدم' : 'User');
-  }, [participantsInfo, isArabic]);
-
-  // Fetch participant info (professional details)
-  const fetchParticipantInfo = useCallback(async (userId) => {
-    if (participantsInfo[userId]) return; // Already fetched
+    // Only fetch for legacy support or if participants array exists without other_participant
+    if (!conversation.participants) return;
     
-    try {
+    console.log('🔍 DEBUG: fetchParticipantsInfo for conversation:', conversation.id);
+    console.log('🔍 DEBUG: Current participantsInfo state:', participantsInfo);
+    
+    for (const participant of conversation.participants) {
+      console.log('🔍 DEBUG: Processing participant:', participant);
+      
+      if (participant.id !== currentUser?.id && !participantsInfo[participant.id]) {
+        try {
+          console.log('🔍 DEBUG: Fetching professional details for participant:', participant.id);
       // Try to get professional details
-      const response = await alistProsService.getProfileDetail(userId);
+          const response = await alistProsService.getProfileDetail(participant.id);
+          console.log('🔍 DEBUG: Professional details response:', response.data);
+          
       setParticipantsInfo(prev => ({
         ...prev,
-        [userId]: response.data
+            [participant.id]: response.data
       }));
     } catch (err) {
-      // If not a professional, we'll use basic user info from conversation
-      console.log(`User ${userId} is not a professional or error fetching details:`, err.message);
+          console.log('🔍 DEBUG: Failed to get professional details, using basic info:', err.message);
+          console.log('🔍 DEBUG: Basic participant info:', participant);
+          
+          // If not a professional, use basic user info
+          setParticipantsInfo(prev => ({
+            ...prev,
+            [participant.id]: {
+              user: participant,
+              business_name: participant.name || participant.email?.split('@')[0] || 'User',
+              is_verified: false
+            }
+          }));
+        }
+      } else {
+        console.log('🔍 DEBUG: Skipping participant (current user or already loaded):', participant.id);
+      }
     }
-  }, [participantsInfo]);
+  }, [currentUser?.id, participantsInfo]);
 
   // Update conversation read status
   const updateConversationReadStatus = useCallback((conversationId) => {
@@ -278,15 +376,34 @@ const MessagesPage = () => {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, activeConversation]);
+  }, [refreshing, activeConversation?.id]);
 
   const fetchConversations = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      const response = await messagingService.getConversations();
-      const conversationsData = response.data.results || [];
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        setLoading(false);
+        return;
+      }
+
+      const response = await messageService.getUserConversations(token);
+      const conversationsData = response.data.results || response.data || [];
+      
+      // Debug: طباعة البيانات للتحقق - Print data for debugging
+      console.log('🔍 DEBUG: Conversations data from API:', conversationsData);
+      if (conversationsData.length > 0) {
+        console.log('🔍 DEBUG: Sample conversation structure:', conversationsData[0]);
+      }
+      
+      // Fetch participant info for all conversations
+      for (const conversation of conversationsData) {
+        await fetchParticipantsInfo(conversation);
+      }
+      
       setConversations(conversationsData);
       
       if (conversationsData.length === 0) {
@@ -301,10 +418,6 @@ const MessagesPage = () => {
           setActiveConversation(targetConversation);
           await fetchMessages(targetConversation.id);
         }
-      } else if (conversationsData.length > 0) {
-        // Otherwise load the first conversation
-        setActiveConversation(conversationsData[0]);
-        await fetchMessages(conversationsData[0].id);
       }
       
     } catch (err) {
@@ -319,17 +432,20 @@ const MessagesPage = () => {
     setMessagesLoading(true);
     
     try {
-      const response = await messagingService.getMessages(conversationId);
-      const messagesData = response.data.results || [];
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        setMessagesLoading(false);
+        return;
+      }
+
+      const response = await messageService.getMessages(token, conversationId);
+      const messagesData = response.data.results || response.data || [];
       setMessages(messagesData);
-      
-      // Fetch participant info for all message senders
-      const senderIds = [...new Set(messagesData.map(msg => msg.sender?.id).filter(Boolean))];
-      await Promise.all(senderIds.map(senderId => fetchParticipantInfo(senderId)));
       
       // Mark conversation as read
       try {
-        await messagingService.markConversationAsRead(conversationId);
+        await messageService.markConversationAsRead(token, conversationId);
         updateConversationReadStatus(conversationId);
       } catch (markReadErr) {
         console.error('Error marking conversation as read:', markReadErr);
@@ -344,29 +460,102 @@ const MessagesPage = () => {
   };
 
   const handleConversationSelect = async (conversation) => {
+    if (activeConversation?.id === conversation.id) return;
+    
     setActiveConversation(conversation);
-    navigate(`/dashboard/messages/${conversation.id}`, { replace: true });
+    navigate(`${isProfessional ? '/pro-dashboard' : '/dashboard'}/messages/${conversation.id}`, { replace: true });
     await fetchMessages(conversation.id);
   };
 
+  // Enhanced send message with attachments support
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !activeConversation || sending) return;
+    if ((!newMessage.trim() && !attachmentPreview) || !activeConversation || sending) return;
 
     setSending(true);
     const messageContent = newMessage.trim();
-    setNewMessage(''); // Clear input immediately for better UX
+    
+    // Stop polling while sending
+    stopPolling();
+    
+    // Get token
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+      setSending(false);
+      return;
+    }
+    
+    // Create optimistic message for immediate UI update
+    const optimisticMessage = {
+      id: `temp_${Date.now()}`,
+      content: messageContent,
+      sender: currentUser,
+      created_at: new Date().toISOString(),
+      conversation: activeConversation.id,
+      is_read: false,
+      isOptimistic: true,
+      reply_to: replyingTo,
+      message_type: attachmentPreview?.type || 'TEXT',
+      image: attachmentPreview?.type === 'IMAGE' ? attachmentPreview.preview : null,
+      file_name: attachmentPreview?.type === 'FILE' ? attachmentPreview.name : null,
+    };
+
+    // Add optimistic message immediately
+    setMessages(prev => {
+      console.log('✅ Adding optimistic message immediately:', messageContent);
+      console.log('📊 Previous messages count:', prev.length);
+      const newMessages = [...prev, optimisticMessage];
+      console.log('📊 New messages count:', newMessages.length);
+      return newMessages;
+    });
+
+    setNewMessage('');
+    setReplyingTo(null);
+    setAttachmentPreview(null);
 
     try {
-      const response = await messagingService.sendMessage(activeConversation.id, {
-        content: messageContent
+      console.log('📤 Sending message to server:', messageContent);
+      
+      let response;
+      if (attachmentPreview) {
+        // Send message with attachment
+        response = await messageService.sendMessageWithAttachment(
+          token, 
+          activeConversation.id, 
+          {
+            content: messageContent,
+            messageType: attachmentPreview.type,
+            replyTo: replyingTo?.id
+          },
+          attachmentPreview.file
+        );
+      } else {
+        // Send regular text message
+        response = await messageService.sendMessage(token, activeConversation.id, {
+          content: messageContent,
+          reply_to: replyingTo?.id
+        });
+      }
+
+      console.log('✅ Message sent successfully, server response:', response.data);
+
+      // Replace optimistic message with real message
+      const realMessage = response.data;
+      
+      setMessages(prev => {
+        console.log('🔄 Replacing optimistic message with real message');
+        // Remove the optimistic message and add the real one
+        const filtered = prev.filter(msg => msg.id !== optimisticMessage.id);
+        const newMessages = [...filtered, realMessage];
+        // Sort to ensure proper order
+        newMessages.sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return newMessages;
       });
 
-      // Add the new message to the local state
-      const newMessageObj = response.data;
-      setMessages(prev => [...prev, newMessageObj]);
-
-      // Update the conversation's last message
+      // Update the conversation's last message in the sidebar
       setConversations(prev => 
         prev.map(conv => 
         conv.id === activeConversation.id 
@@ -374,19 +563,313 @@ const MessagesPage = () => {
                 ...conv, 
                 last_message: { 
                   content: messageContent,
-                  created_at: newMessageObj.created_at 
-                }
+                  created_at: realMessage.created_at,
+                  sender: currentUser
+                },
+                updated_at: realMessage.created_at
               }
           : conv
         )
       );
+
+      // Force scroll to bottom
+      setTimeout(() => {
+        if (messageEndRef.current) {
+          messageEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
       
     } catch (err) {
-      console.error('Error sending message:', err);
-      setError(isArabic ? 'فشل في إرسال الرسالة' : 'Failed to send message');
-      setNewMessage(messageContent); // Restore message content on error
+      console.error('❌ Error sending message:', err);
+      
+      // Remove optimistic message on error
+      setMessages(prev => {
+        console.log('🗑️ Removing failed optimistic message');
+        return prev.filter(msg => msg.id !== optimisticMessage.id);
+      });
+      
+      // Restore the message content so user can try again
+      setNewMessage(messageContent);
+      
+      // Show user-friendly error message
+      if (err.response?.status === 404) {
+        setError(isArabic ? 'المحادثة غير موجودة' : 'Conversation not found');
+      } else if (err.response?.status === 403) {
+        setError(isArabic ? 'ليس لديك صلاحية لإرسال رسائل في هذه المحادثة' : 'You do not have permission to send messages in this conversation');
+      } else if (err.response?.status === 500) {
+        setError(isArabic ? 'خطأ في الخادم. يرجى المحاولة مرة أخرى' : 'Server error. Please try again');
+      } else {
+        setError(isArabic ? 'فشل في إرسال الرسالة. يرجى المحاولة مرة أخرى' : 'Failed to send message. Please try again');
+      }
+      
+      // Show error details in console for debugging
+      if (err.response) {
+        console.error('Response status:', err.response.status);
+        console.error('Response data:', err.response.data);
+      }
     } finally {
       setSending(false);
+      
+      // Restart polling after a delay with shorter interval initially
+      setTimeout(() => {
+        if (activeConversation) {
+          // Start with short interval to quickly sync after sending
+          startPolling(true);
+          // Do an immediate check for new messages
+          checkForNewMessages();
+          
+          // After 15 seconds, switch back to normal interval
+          setTimeout(() => {
+            if (activeConversation) {
+              startPolling(false);
+            }
+          }, 15000);
+        }
+      }, 1000); // Wait 1 second before restarting polling
+    }
+  };
+
+  // Handle message reactions
+  const handleReaction = async (messageId, reactionType) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      // Try to call the function, if it doesn't exist, handle locally
+      try {
+        if (messageService.addReaction) {
+          await messageService.addReaction(token, activeConversation.id, messageId, reactionType);
+        } else {
+          console.log('Reaction feature not implemented in backend yet');
+        }
+      } catch (apiErr) {
+        console.log('Reaction API not available, handling locally');
+      }
+
+      // Update message in local state
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === messageId) {
+          const updatedReactions = msg.reactions || [];
+          const existingReaction = updatedReactions.find(r => r.user.id === currentUser.id);
+          if (existingReaction) {
+            existingReaction.reaction_type = reactionType;
+          } else {
+            updatedReactions.push({
+              user: currentUser,
+              reaction_type: reactionType
+            });
+          }
+          return { ...msg, reactions: updatedReactions };
+        }
+        return msg;
+      }));
+      setShowReactionPicker(null);
+    } catch (err) {
+      console.error('Error adding reaction:', err);
+    }
+  };
+
+  // Handle message edit
+  const handleEditMessage = async (messageId, newContent) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      // Try to call the function, if it doesn't exist, handle locally
+      try {
+        if (messageService.editMessage) {
+          await messageService.editMessage(token, activeConversation.id, messageId, newContent);
+        } else {
+          console.log('Edit message feature not implemented in backend yet');
+        }
+      } catch (apiErr) {
+        console.log('Edit message API not available, handling locally');
+      }
+
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, content: newContent, is_edited: true, edited_at: new Date().toISOString() }
+          : msg
+      ));
+      setEditingMessage(null);
+    } catch (err) {
+      console.error('Error editing message:', err);
+      setError(isArabic ? 'فشل في تعديل الرسالة' : 'Failed to edit message');
+    }
+  };
+
+  // Handle message delete
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm(isArabic ? 'هل أنت متأكد من حذف هذه الرسالة؟' : 'Are you sure you want to delete this message?')) {
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      await messageService.deleteMessage(token, messageId);
+      setMessages(prev => prev.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, is_deleted: true, deleted_at: new Date().toISOString() }
+          : msg
+      ));
+    } catch (err) {
+      console.error('Error deleting message:', err);
+      setError(isArabic ? 'فشل في حذف الرسالة' : 'Failed to delete message');
+    }
+  };
+
+  // Handle file attachment
+  const handleFileAttachment = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError(isArabic ? 'حجم الملف كبير جداً (الحد الأقصى 10 ميجابايت)' : 'File size too large (max 10MB)');
+      return;
+    }
+    
+    setAttachmentPreview({
+      type: 'FILE',
+      file: file,
+      name: file.name,
+      size: file.size,
+      preview: null
+    });
+    setShowAttachmentMenu(false);
+  };
+
+  // Handle image attachment
+  const handleImageAttachment = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    // Check if it's an image
+    if (!file.type.startsWith('image/')) {
+      setError(isArabic ? 'الرجاء اختيار ملف صورة' : 'Please select an image file');
+      return;
+    }
+    
+    // Check file size (max 5MB for images)
+    if (file.size > 5 * 1024 * 1024) {
+      setError(isArabic ? 'حجم الصورة كبير جداً (الحد الأقصى 5 ميجابايت)' : 'Image size too large (max 5MB)');
+      return;
+    }
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAttachmentPreview({
+        type: 'IMAGE',
+        file: file,
+        name: file.name,
+        size: file.size,
+        preview: reader.result
+      });
+    };
+    reader.readAsDataURL(file);
+    setShowAttachmentMenu(false);
+  };
+
+  // Search users for new conversation
+  const searchUsers = async (query) => {
+    if (!query || query.length < 2) {
+      setUserSearchResults([]);
+      return;
+    }
+    
+    setSearchingUsers(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        setSearchingUsers(false);
+        return;
+      }
+
+      // Try to call the function, if it doesn't exist, handle locally
+      try {
+        if (messageService.searchUsers) {
+          const response = await messageService.searchUsers(token, query);
+          setUserSearchResults(response.data.results || response.data || []);
+        } else {
+          console.log('User search feature not implemented in backend yet');
+          setUserSearchResults([]);
+        }
+      } catch (apiErr) {
+        console.log('User search API not available');
+        setUserSearchResults([]);
+      }
+    } catch (err) {
+      console.error('Error searching users:', err);
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  // Create new conversation
+  const createNewConversation = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      const response = await messageService.createConversation(token, {
+        participants: [userId]
+      });
+      const newConversation = response.data;
+      setConversations(prev => [newConversation, ...prev]);
+      handleConversationSelect(newConversation);
+      setUserSearchQuery('');
+      setUserSearchResults([]);
+    } catch (err) {
+      console.error('Error creating conversation:', err);
+      setError(isArabic ? 'فشل في إنشاء المحادثة' : 'Failed to create conversation');
+    }
+  };
+
+  // Archive conversation
+  const handleArchiveConversation = async () => {
+    if (!activeConversation) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      // Try to call the function, if it doesn't exist, handle locally
+      try {
+        if (messageService.archiveConversation) {
+          await messageService.archiveConversation(token, activeConversation.id);
+        } else {
+          console.log('Archive conversation feature not implemented in backend yet');
+        }
+      } catch (apiErr) {
+        console.log('Archive conversation API not available, handling locally');
+      }
+
+      setConversations(prev => prev.map(conv => 
+        conv.id === activeConversation.id 
+          ? { ...conv, is_archived: !conv.is_archived }
+          : conv
+      ));
+    } catch (err) {
+      console.error('Error archiving conversation:', err);
     }
   };
 
@@ -416,69 +899,393 @@ const MessagesPage = () => {
   };
 
   const getParticipantName = (conversation) => {
-    if (!conversation.participants) return isArabic ? 'محادثة' : 'Conversation';
+    console.log('🔍 DEBUG: getParticipantName for conversation:', conversation.id);
+    console.log('🔍 DEBUG: Conversation structure:', conversation);
+    console.log('🔍 DEBUG: other_participant:', conversation.other_participant);
+    console.log('🔍 DEBUG: title:', conversation.title);
     
-    // Find the other participant (not current user)
+    // For group conversations, use the title
+    if (conversation.is_group && conversation.title) {
+      console.log('🔍 DEBUG: Returning group title:', conversation.title);
+      return conversation.title;
+    }
+    
+    // For direct conversations, use other_participant data from API
+    if (conversation.other_participant) {
+      const name = conversation.other_participant.name ||
+                  conversation.other_participant.full_name ||
+                  conversation.other_participant.email ||
+                  (isArabic ? 'مستخدم' : 'User');
+      console.log('🔍 DEBUG: Returning other_participant name:', name);
+      return name;
+    }
+    
+    // Fallback: try using participants array (for backward compatibility)
+    if (conversation.participants && conversation.participants.length > 0) {
+      console.log('🔍 DEBUG: Using participants array fallback');
     const otherParticipant = conversation.participants.find(
       p => p.id !== currentUser?.id
     );
     
-    if (!otherParticipant) return isArabic ? 'محادثة' : 'Conversation';
-    
-    // Check if we have detailed professional info
-    const participantInfo = participantsInfo[otherParticipant.id];
-    if (participantInfo) {
-      return participantInfo.business_name || 
-             `${participantInfo.user?.first_name || ''} ${participantInfo.user?.last_name || ''}`.trim() ||
-             participantInfo.user?.name ||
-             participantInfo.user?.email ||
+      if (otherParticipant) {
+        const name = otherParticipant.name ||
+               otherParticipant.email || 
              (isArabic ? 'مستخدم' : 'User');
+        console.log('🔍 DEBUG: Returning fallback participant name:', name);
+        return name;
+      }
     }
     
-    // Fallback to basic participant info
-    return `${otherParticipant.first_name || ''} ${otherParticipant.last_name || ''}`.trim() ||
-           otherParticipant.name ||
-           otherParticipant.email || 
-           (isArabic ? 'مستخدم' : 'User');
+    console.log('🔍 DEBUG: No participant data found, returning fallback');
+    return isArabic ? 'محادثة' : 'Conversation';
+  };
+
+  // New function to get conversation date
+  const getConversationDate = (conversation) => {
+    console.log('🔍 DEBUG: getConversationDate for conversation:', conversation.id);
+    console.log('🔍 DEBUG: last_message_preview:', conversation.last_message_preview);
+    console.log('🔍 DEBUG: last_message_time:', conversation.last_message_time);
+    
+    // Use last_message_time from ConversationListSerializer, fallback to other fields
+    const dateToFormat = conversation.last_message_time || 
+                        conversation.last_message_preview?.created_at ||
+                        conversation.last_message?.created_at || 
+                        conversation.created_at;
+    
+    if (!dateToFormat) {
+      console.log('🔍 DEBUG: No date found');
+      return '';
+    }
+    
+    const date = new Date(dateToFormat);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    console.log('🔍 DEBUG: Date calculation - diffDays:', diffDays);
+    
+    if (diffDays === 0) {
+      // Today - show time
+      const timeString = date.toLocaleTimeString(isArabic ? 'ar-EG' : 'en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      console.log('🔍 DEBUG: Returning today time:', timeString);
+      return timeString;
+    } else if (diffDays === 1) {
+      // Yesterday
+      const yesterdayString = isArabic ? 'أمس' : 'Yesterday';
+      console.log('🔍 DEBUG: Returning yesterday:', yesterdayString);
+      return yesterdayString;
+    } else if (diffDays < 7) {
+      // This week - show day name
+      const dayString = date.toLocaleDateString(isArabic ? 'ar-EG' : 'en-US', { 
+        weekday: 'short' 
+      });
+      console.log('🔍 DEBUG: Returning day name:', dayString);
+      return dayString;
+    } else {
+      // Older - show date
+      const dateString = date.toLocaleDateString(isArabic ? 'ar-EG' : 'en-US', { 
+        month: 'short', 
+        day: 'numeric',
+        year: diffDays > 365 ? 'numeric' : undefined
+      });
+      console.log('🔍 DEBUG: Returning date:', dateString);
+      return dateString;
+    }
   };
 
   // Get participant details for conversation header
   const getParticipantDetails = (conversation) => {
-    if (!conversation.participants) return null;
+    console.log('🔍 DEBUG: getParticipantDetails for conversation:', conversation.id);
+    console.log('🔍 DEBUG: conversation object keys:', Object.keys(conversation));
+    console.log('🔍 DEBUG: other_participant:', conversation.other_participant);
+    console.log('🔍 DEBUG: participants:', conversation.participants);
+    console.log('🔍 DEBUG: current user ID:', currentUser?.id);
+    
+    // For group conversations
+    if (conversation.is_group) {
+      console.log('🔍 DEBUG: Group conversation detected');
+      return {
+        name: conversation.title || (isArabic ? 'مجموعة' : 'Group'),
+        profession: isArabic ? 'محادثة جماعية' : 'Group Chat',
+        rating: null,
+        isVerified: false,
+        avatar: conversation.avatar_url,
+        phone: null,
+        email: null,
+        location: null,
+        userId: null
+      };
+    }
+    
+    // For direct conversations, use other_participant data from API
+    if (conversation.other_participant) {
+      const participant = conversation.other_participant;
+      console.log('🔍 DEBUG: Using other_participant data:', participant);
+      console.log('🔍 DEBUG: other_participant keys:', Object.keys(participant));
+      
+      return {
+        name: participant.full_name || participant.name || participant.username || participant.email?.split('@')[0] || (isArabic ? 'مستخدم' : 'User'),
+        profession: isArabic ? 'مستخدم' : 'User',
+        rating: null,
+        isVerified: false,
+        avatar: participant.avatar_url || participant.profile_picture,
+        phone: participant.phone_number,
+        email: participant.email,
+        location: null,
+        userId: participant.id || participant.user_id
+      };
+    }
+    
+    // Fallback: try using participants array and participantsInfo state
+    if (conversation.participants && Array.isArray(conversation.participants)) {
+      console.log('🔍 DEBUG: Using participants array fallback');
+      console.log('🔍 DEBUG: participants array:', conversation.participants);
     
     const otherParticipant = conversation.participants.find(
       p => p.id !== currentUser?.id
     );
     
-    if (!otherParticipant) return null;
+      console.log('🔍 DEBUG: found other participant:', otherParticipant);
+      
+      if (!otherParticipant) {
+        console.log('🔍 DEBUG: No other participant found');
+        return null;
+      }
     
     const participantInfo = participantsInfo[otherParticipant.id];
+      console.log('🔍 DEBUG: participantInfo from state:', participantInfo);
+      
     if (participantInfo) {
       return {
         name: participantInfo.business_name || 
-              `${participantInfo.user?.first_name || ''} ${participantInfo.user?.last_name || ''}`.trim() ||
               participantInfo.user?.name ||
+                participantInfo.user?.full_name ||
+                otherParticipant.name ||
+                otherParticipant.username ||
               (isArabic ? 'مستخدم' : 'User'),
         profession: participantInfo.profession || participantInfo.business_description || (isArabic ? 'محترف' : 'Professional'),
         rating: participantInfo.average_rating,
         isVerified: participantInfo.is_verified,
-        avatar: participantInfo.profile_image || participantInfo.user?.profile_picture,
-        phone: participantInfo.user?.phone_number,
-        email: participantInfo.user?.email
+          avatar: participantInfo.profile_image || participantInfo.user?.profile_picture || otherParticipant.profile_picture,
+          phone: participantInfo.user?.phone_number || participantInfo.phone_number || otherParticipant.phone_number,
+          email: participantInfo.user?.email || otherParticipant.email,
+          location: participantInfo.business_address || participantInfo.location,
+          userId: otherParticipant.id
       };
     }
     
+      // Return basic participant info if no detailed info is available
     return {
-      name: `${otherParticipant.first_name || ''} ${otherParticipant.last_name || ''}`.trim() ||
-            otherParticipant.name ||
+        name: otherParticipant.name ||
+              otherParticipant.username ||
+              otherParticipant.email?.split('@')[0] ||
             (isArabic ? 'مستخدم' : 'User'),
       profession: isArabic ? 'مستخدم' : 'User',
       rating: null,
       isVerified: false,
       avatar: otherParticipant.profile_picture,
       phone: otherParticipant.phone_number,
-      email: otherParticipant.email
-    };
+        email: otherParticipant.email,
+        location: null,
+        userId: otherParticipant.id
+      };
+    }
+    
+    console.log('🔍 DEBUG: No participant details found - all methods failed');
+    return null;
+  };
+
+  // Handle quote creation
+  const handleCreateQuote = () => {
+    console.log('🎯 Starting quote creation process...');
+    
+    if (!activeConversation) {
+      console.error('❌ No active conversation');
+      alert(isArabic ? 'لا توجد محادثة نشطة' : 'No active conversation');
+      return;
+    }
+    
+    console.log('🔍 Active conversation:', activeConversation);
+    
+    const participantDetails = getParticipantDetails(activeConversation);
+    console.log('👤 Participant details:', participantDetails);
+    
+    if (!participantDetails) {
+      console.error('❌ Could not get participant details');
+      alert(isArabic ? 'خطأ في الحصول على بيانات المشارك' : 'Error getting participant details');
+      return;
+    }
+    
+    if (!participantDetails.userId) {
+      console.error('❌ No participant userId found');
+      alert(isArabic ? 'لا يمكن تحديد العميل' : 'Cannot identify client');
+      return;
+    }
+    
+    // Determine the correct dashboard path based on user role
+    let dashboardPath = '/pro-dashboard';
+    if (currentUser?.role === 'specialist') {
+      dashboardPath = '/specialist-dashboard';
+    } else if (currentUser?.role === 'crew') {
+      dashboardPath = '/crew-dashboard';
+    }
+    
+    const quotePath = `${dashboardPath}/quotes/create`;
+    
+    console.log('✅ Navigating to quote creation with data:', {
+      path: quotePath,
+      clientId: participantDetails.userId,
+      clientName: participantDetails.name,
+      conversationId: activeConversation.id
+    });
+    
+    // Navigate to quote creation page with conversation context
+    navigate(quotePath, {
+      state: {
+        clientId: participantDetails.userId,
+        clientName: participantDetails.name,
+        conversationId: activeConversation.id
+      }
+    });
+  };
+
+  // Handle service request creation
+  const handleCreateServiceRequest = () => {
+    console.log('🎯 Preparing to create service request...');
+    
+    if (!activeConversation) {
+      console.error('❌ No active conversation');
+      alert(isArabic ? 'لا توجد محادثة نشطة' : 'No active conversation');
+      return;
+    }
+    
+    console.log('🔍 Active conversation:', activeConversation);
+    
+    const participantDetails = getParticipantDetails(activeConversation);
+    console.log('👤 Professional details:', participantDetails);
+    
+    if (!participantDetails) {
+      console.error('❌ Could not get professional details');
+      alert(isArabic ? 'خطأ في الحصول على بيانات مقدم الخدمة' : 'Error getting professional details');
+      return;
+    }
+    
+    if (!participantDetails.userId) {
+      console.error('❌ No professional userId found');
+      alert(isArabic ? 'لا يمكن تحديد مقدم الخدمة' : 'Cannot identify professional');
+      return;
+    }
+    
+    console.log('✅ Professional identified:', participantDetails.name, 'ID:', participantDetails.userId);
+    
+    setServiceRequestData(prev => ({
+      ...prev,
+      title: isArabic ? `طلب خدمة من ${participantDetails.name}` : `Service request for ${participantDetails.name}`,
+      description: ''
+    }));
+    setShowServiceRequestModal(true);
+  };
+
+  // Submit service request
+  const handleSubmitServiceRequest = async (e) => {
+    e.preventDefault();
+    if (creatingServiceRequest) return;
+
+    console.log('🎯 Starting service request creation process...');
+    console.log('🔍 Active conversation:', activeConversation);
+
+    const participantDetails = getParticipantDetails(activeConversation);
+    console.log('👤 Participant details for professional:', participantDetails);
+    
+    if (!participantDetails || !participantDetails.userId) {
+      console.error('❌ Could not get professional details');
+      alert(isArabic ? 'خطأ في البيانات - لا يمكن تحديد مقدم الخدمة' : 'Error in data - cannot identify professional');
+      return;
+    }
+
+    setCreatingServiceRequest(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      // Create a basic service address
+      const serviceAddress = {
+        street_address: 'Service location to be determined',
+        city: 'TBD',
+        state: 'TBD',
+        zip_code: '00000',
+        country: 'Egypt'
+      };
+
+      const requestData = {
+        title: serviceRequestData.title,
+        description: serviceRequestData.description,
+        budget_max: parseFloat(serviceRequestData.budget_max) || null,
+        urgency: serviceRequestData.urgency,
+        flexible_schedule: serviceRequestData.flexible_schedule,
+        is_public: false, // Private request between these two users
+        service_address: serviceAddress,
+        // Use professional_id field that the serializer accepts
+        professional_id: participantDetails.userId
+      };
+
+      console.log('📤 Creating service request with professional:', requestData);
+
+      // Create service request via API
+      const response = await alistProsService.createServiceRequest(requestData);
+      
+      console.log('✅ Service request created successfully:', response.data);
+
+      // Send a system message to the conversation
+      const systemMessage = {
+        content: isArabic 
+          ? `تم إنشاء طلب خدمة جديد: ${serviceRequestData.title}\nمقدم الخدمة: ${participantDetails.name}\nالميزانية القصوى: ${serviceRequestData.budget_max ? '$' + serviceRequestData.budget_max : 'غير محددة'}\nالأولوية: ${serviceRequestData.urgency}`
+          : `New service request created: ${serviceRequestData.title}\nAssigned to: ${participantDetails.name}\nMax Budget: ${serviceRequestData.budget_max ? '$' + serviceRequestData.budget_max : 'Not specified'}\nUrgency: ${serviceRequestData.urgency}`,
+        message_type: 'SYSTEM'
+      };
+
+      await messageService.sendMessage(token, activeConversation.id, systemMessage);
+
+      // Reset form and close modal
+      setServiceRequestData({
+        title: '',
+        description: '',
+        budget_max: '',
+        urgency: 'medium',
+        flexible_schedule: true
+      });
+      setShowServiceRequestModal(false);
+
+      alert(isArabic ? `تم إنشاء طلب الخدمة بنجاح وتم ربطه بـ ${participantDetails.name}! يمكنه الآن إرسال عرض سعر.` : `Service request created successfully and assigned to ${participantDetails.name}! They can now send you a quote.`);
+
+      // Refresh messages to show the system message
+      if (activeConversation) {
+        await fetchMessages(activeConversation.id);
+      }
+
+    } catch (error) {
+      console.error('❌ Error creating service request:', error);
+      const errorMessage = error.response?.data?.detail || error.response?.data?.error || error.message;
+      alert(isArabic ? `فشل في إنشاء طلب الخدمة: ${errorMessage}` : `Failed to create service request: ${errorMessage}`);
+    } finally {
+      setCreatingServiceRequest(false);
+    }
+  };
+
+  // Handle input changes for service request form
+  const handleServiceRequestInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setServiceRequestData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
   };
 
   // Filter conversations based on search term
@@ -525,7 +1332,7 @@ const MessagesPage = () => {
                   <FaSyncAlt className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                 </button>
                 <Link
-                  to="/dashboard"
+                  to={isProfessional ? '/pro-dashboard' : '/dashboard'}
                   className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded-full transition-colors"
                   title={isArabic ? 'العودة للوحة التحكم' : 'Back to dashboard'}
                 >
@@ -570,7 +1377,10 @@ const MessagesPage = () => {
                   </div>
                 ) : (
               <div className="divide-y divide-gray-100">
-                {filteredConversations.map(conversation => (
+                {filteredConversations.map(conversation => {
+                  const participantDetails = getParticipantDetails(conversation);
+                  
+                  return (
                   <motion.div
                       key={conversation.id}
                     whileHover={{ backgroundColor: '#f3f4f6' }}
@@ -583,19 +1393,70 @@ const MessagesPage = () => {
                     >
                       <div className="flex items-start">
                       <div className="flex-shrink-0 relative">
+                          {participantDetails?.avatar ? (
+                            <img
+                              src={participantDetails.avatar}
+                              alt={participantDetails.name}
+                              className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                            />
+                          ) : (
                         <FaUserCircle className="h-12 w-12 text-gray-400" />
+                          )}
                         {conversation.unread_count > 0 && (
                           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                             {conversation.unread_count}
                             </span>
                           )}
+                          {participantDetails?.isVerified && (
+                            <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1">
+                              <FaShieldAlt className="h-2 w-2 text-white" />
+                            </div>
+                          )}
                         </div>
                       <div className="ml-3 flex-1 min-w-0">
                         <div className="flex justify-between items-start">
-                          <h3 className="text-sm font-medium text-gray-900 truncate">
-                            {getParticipantName(conversation)}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center">
+                                <h3 className="text-sm font-medium text-gray-900 truncate mr-2">
+                                  {participantDetails?.name || getParticipantName(conversation)}
                           </h3>
-                          <span className="text-xs text-gray-500">
+                                {participantDetails?.isVerified && (
+                                  <FaCheckCircle className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                                )}
+                              </div>
+                              
+                              {/* Show email and conversation date dynamically */}
+                              <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
+                                <div className="flex items-center flex-1 min-w-0">
+                                  <FaEnvelope className="h-2 w-2 mr-1 flex-shrink-0" />
+                                  <span className="truncate">
+                                    {/* Use other_participant data from API */}
+                                    {conversation.other_participant?.email || 
+                                     conversation.participants?.find(p => p.id !== currentUser?.id)?.email ||
+                                     (isArabic ? 'لا يوجد بريد' : 'No email')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center ml-2 flex-shrink-0">
+                                  <FaCalendarAlt className="h-2 w-2 mr-1" />
+                                  <span>{getConversationDate(conversation)}</span>
+                                </div>
+                              </div>
+                              
+                              {/* Show profession and rating if available */}
+                              {participantDetails?.profession && (
+                                <div className="flex items-center text-xs text-gray-500 mt-1">
+                                  <FaUserTag className="h-2 w-2 mr-1" />
+                                  <span className="truncate">{participantDetails.profession}</span>
+                                  {participantDetails.rating && (
+                                    <div className="flex items-center ml-2">
+                                      <FaStar className="h-2 w-2 text-yellow-500 mr-1" />
+                                      <span>{participantDetails.rating.toFixed(1)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-500 flex-shrink-0">
                             {formatTimestamp(conversation.last_message?.created_at)}
                           </span>
                         </div>
@@ -605,7 +1466,8 @@ const MessagesPage = () => {
                       </div>
                     </div>
                   </motion.div>
-                ))}
+                  );
+                })}
               </div>
                 )}
               </div>
@@ -635,7 +1497,7 @@ const MessagesPage = () => {
                             )}
                             {participantDetails?.isVerified && (
                               <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1">
-                                <FaShieldAlt className="h-3 w-3 text-white" />
+                                <FaShieldAlt className="h-2 w-2 text-white" />
                               </div>
                             )}
                           </div>
@@ -654,11 +1516,18 @@ const MessagesPage = () => {
                                 </div>
                               )}
                             </div>
-                            <div className="flex items-center text-sm text-gray-500">
+                            <div className="flex items-center text-sm text-gray-500 space-x-4">
+                              {participantDetails?.profession && (
+                                <div className="flex items-center">
                               <FaUserTag className="h-3 w-3 mr-1" />
-                              <span>{participantDetails?.profession}</span>
-                              {participantDetails?.phone && (
-                                <span className="ml-2">• {participantDetails.phone}</span>
+                                  <span>{participantDetails.profession}</span>
+                                </div>
+                              )}
+                              {participantDetails?.location && (
+                                <div className="flex items-center">
+                                  <FaMapMarkerAlt className="h-3 w-3 mr-1" />
+                                  <span className="truncate max-w-xs">{participantDetails.location}</span>
+                                </div>
                               )}
                       </div>
                     </div>
@@ -666,7 +1535,31 @@ const MessagesPage = () => {
                       );
                     })()}
                   </div>
-                  <div className="flex space-x-2">
+                  <div className="flex items-center space-x-2">
+                    {/* Quote Button for Professionals */}
+                    {isProfessional && (
+                      <button
+                        onClick={handleCreateQuote}
+                        className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                        title={isArabic ? 'إنشاء عرض سعر' : 'Create Quote'}
+                      >
+                        <FaFileInvoiceDollar className="h-4 w-4 mr-2" />
+                        {isArabic ? 'عرض سعر' : 'Quote'}
+                      </button>
+                    )}
+
+                    {/* Request Service Button for Clients */}
+                    {!isProfessional && (
+                      <button
+                        onClick={handleCreateServiceRequest}
+                        className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                        title={isArabic ? 'طلب خدمة' : 'Request Service'}
+                      >
+                        <FaHandshake className="h-4 w-4 mr-2" />
+                        {isArabic ? 'طلب خدمة' : 'Request Service'}
+                      </button>
+                    )}
+                    
                     {(() => {
                       const participantDetails = getParticipantDetails(activeConversation);
                       return (
@@ -680,12 +1573,18 @@ const MessagesPage = () => {
                               <FaPhone className="h-5 w-5" />
                             </a>
                           )}
+                          {participantDetails?.email && (
+                            <a
+                              href={`mailto:${participantDetails.email}`}
+                              className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                              title={isArabic ? 'إرسال بريد إلكتروني' : 'Send email'}
+                            >
+                              <FaEnvelope className="h-5 w-5" />
+                            </a>
+                          )}
                         </>
                       );
                     })()}
-                    <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
-                      <FaVideo className="h-5 w-5" />
-                    </button>
                     <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors">
                       <FaEllipsisV className="h-5 w-5" />
                     </button>
@@ -696,7 +1595,7 @@ const MessagesPage = () => {
               {/* Messages Area */}
               <div 
                 ref={chatWindowRef}
-                className="flex-1 overflow-y-auto p-4 space-y-4"
+                className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50"
               >
                 {messagesLoading ? (
                   <div className="flex justify-center">
@@ -713,7 +1612,6 @@ const MessagesPage = () => {
                   <AnimatePresence>
                     {messages.map((message, index) => {
                       const isCurrentUserMessage = message.sender?.id === currentUser?.id;
-                      const senderName = getMessageSenderName(message);
                       const senderInfo = participantsInfo[message.sender?.id];
                       
                       return (
@@ -728,7 +1626,7 @@ const MessagesPage = () => {
                               {senderInfo?.profile_image || senderInfo?.user?.profile_picture ? (
                                 <img
                                   src={senderInfo.profile_image || senderInfo.user.profile_picture}
-                                  alt={senderName}
+                                  alt={senderInfo.business_name}
                                   className="h-8 w-8 rounded-full object-cover"
                                 />
                               ) : (
@@ -742,15 +1640,10 @@ const MessagesPage = () => {
                             {!isCurrentUserMessage && (
                               <div className="flex items-center mb-1">
                                 <span className="text-xs font-medium text-gray-700 mr-2">
-                                  {senderName}
+                                  {senderInfo?.business_name || message.sender?.name || message.sender?.email?.split('@')[0] || (isArabic ? 'مستخدم' : 'User')}
                                 </span>
                                 {senderInfo?.is_verified && (
                                   <FaCheckCircle className="h-3 w-3 text-blue-500" title={isArabic ? 'محقق' : 'Verified'} />
-                                )}
-                                {senderInfo?.profession && (
-                                  <span className="text-xs text-gray-500 ml-2">
-                                    • {senderInfo.profession}
-                                  </span>
                                 )}
                               </div>
                             )}
@@ -758,7 +1651,7 @@ const MessagesPage = () => {
                             <div className={`px-4 py-2 rounded-lg shadow-sm ${
                               isCurrentUserMessage
                                 ? 'bg-blue-600 text-white rounded-br-sm'
-                                : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white rounded-bl-sm'
+                                : 'bg-white text-gray-900 rounded-bl-sm border border-gray-200'
                             }`}>
                               <p className="text-sm">{message.content}</p>
                             </div>
@@ -816,7 +1709,7 @@ const MessagesPage = () => {
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                       placeholder={isArabic ? 'اكتب رسالة...' : 'Type a message...'}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
                       disabled={sending}
                       />
                       <button 
@@ -829,7 +1722,7 @@ const MessagesPage = () => {
                       <button
                         type="submit"
                     disabled={!newMessage.trim() || sending}
-                    className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {sending ? (
                       <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
@@ -857,65 +1750,176 @@ const MessagesPage = () => {
               )}
         </div>
 
-        {/* Error Toast */}
-        {error && (
+        {/* Service Request Modal */}
+        <AnimatePresence>
+          {showServiceRequestModal && (
           <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {isArabic ? 'طلب خدمة جديد' : 'New Service Request'}
+                  </h3>
+                  <button
+                    onClick={() => setShowServiceRequestModal(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <FaTimes className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <form onSubmit={handleSubmitServiceRequest} className="p-6 space-y-4">
+                  {/* Service Title */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {isArabic ? 'عنوان الخدمة' : 'Service Title'} *
+                    </label>
+                    <input
+                      type="text"
+                      name="title"
+                      value={serviceRequestData.title}
+                      onChange={handleServiceRequestInputChange}
+                      placeholder={isArabic ? 'مثال: صيانة السباكة' : 'e.g., Plumbing Repair'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
+                    />
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {isArabic ? 'وصف المشكلة' : 'Description'} *
+                    </label>
+                    <textarea
+                      name="description"
+                      value={serviceRequestData.description}
+                      onChange={handleServiceRequestInputChange}
+                      placeholder={isArabic ? 'اشرح التفاصيل والمشكلة المطلوب حلها...' : 'Describe the details and problem to be solved...'}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      required
+                    />
+                  </div>
+
+                  {/* Budget */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {isArabic ? 'الحد الأقصى للميزانية (اختياري)' : 'Maximum Budget (Optional)'}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                      <input
+                        type="number"
+                        name="budget_max"
+                        value={serviceRequestData.budget_max}
+                        onChange={handleServiceRequestInputChange}
+                        placeholder="0.00"
+                        min="0"
+                        step="0.01"
+                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {isArabic ? 'سيتم حجز هذا المبلغ عند الموافقة على العرض' : 'This amount will be reserved when accepting a quote'}
+                    </p>
+                  </div>
+
+                  {/* Urgency */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {isArabic ? 'الأولوية' : 'Urgency'}
+                    </label>
+                    <select
+                      name="urgency"
+                      value={serviceRequestData.urgency}
+                      onChange={handleServiceRequestInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="low">{isArabic ? 'منخفضة' : 'Low'}</option>
+                      <option value="medium">{isArabic ? 'متوسطة' : 'Medium'}</option>
+                      <option value="high">{isArabic ? 'عالية' : 'High'}</option>
+                      <option value="emergency">{isArabic ? 'طارئة' : 'Emergency'}</option>
+                    </select>
+                  </div>
+
+                  {/* Flexible Schedule */}
+            <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="flexible_schedule"
+                      checked={serviceRequestData.flexible_schedule}
+                      onChange={handleServiceRequestInputChange}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label className="ml-2 text-sm text-gray-700">
+                      {isArabic ? 'لدي مرونة في المواعيد' : 'I have flexible schedule'}
+                    </label>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+              <button
+                      type="button"
+                      onClick={() => setShowServiceRequestModal(false)}
+                      className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      {isArabic ? 'إلغاء' : 'Cancel'}
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={creatingServiceRequest || !serviceRequestData.title || !serviceRequestData.description}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                    >
+                      {creatingServiceRequest ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                          {isArabic ? 'جاري الإنشاء...' : 'Creating...'}
+                        </>
+                      ) : (
+                        <>
+                          <FaHandshake className="h-4 w-4 mr-2" />
+                          {isArabic ? 'إنشاء طلب الخدمة' : 'Create Service Request'}
+                        </>
+                      )}
+              </button>
+            </div>
+                </form>
+              </motion.div>
+          </motion.div>
+        )}
+        </AnimatePresence>
+
+        {/* Error Toast */}
+        <AnimatePresence>
+        {error && (
+            <motion.div
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg"
-          >
+              className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50"
+            >
             <div className="flex items-center">
               <span className="mr-2">{error}</span>
-              <button
+                <button
                 onClick={() => setError(null)}
                 className="text-white hover:text-gray-200"
-              >
-                ×
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* New Message Notifications */}
-        <AnimatePresence>
-          {newMessageNotifications.map((notification, index) => (
-            <motion.div
-              key={notification.id}
-              initial={{ opacity: 0, x: 300 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 300 }}
-              className="fixed top-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm z-50"
-              style={{ top: `${80 + index * 70}px` }}
-            >
-              <div className="flex items-start">
-                <div className="flex-shrink-0 mr-3">
-                  <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <FaBell className="h-5 w-5 text-blue-600" />
-          </div>
-        </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">
-                    {isArabic ? 'رسالة جديدة من' : 'New message from'} {notification.senderName}
-                  </p>
-                  <p className="text-sm text-gray-500 truncate mt-1">
-                    {notification.message.content}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {formatTimestamp(notification.message.created_at)}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setNewMessageNotifications(prev => 
-                    prev.filter(n => n.id !== notification.id)
-                  )}
-                  className="ml-2 text-gray-400 hover:text-gray-600"
                 >
                   <FaTimes className="h-4 w-4" />
                 </button>
               </div>
             </motion.div>
-          ))}
+          )}
         </AnimatePresence>
       </div>
     </>

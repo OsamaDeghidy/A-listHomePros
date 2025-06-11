@@ -32,7 +32,8 @@ import {
   FaKey,
   FaEye,
   FaPaint,
-  FaLanguage
+  FaLanguage,
+  FaHandshake
 } from 'react-icons/fa';
 import { useAuth } from '../../hooks/useAuth';
 import { useLanguage } from '../../hooks/useLanguage';
@@ -145,6 +146,13 @@ const DashboardLayout = ({ isPro = false }) => {
       description: isArabic ? 'التواصل مع المحترفين' : 'Chat with professionals'
     },
     { 
+      name: isArabic ? 'طلبات الخدمة' : 'Service Requests', 
+      path: '/dashboard/service-requests', 
+      icon: FaHandshake,
+      color: 'bg-green-600',
+      description: isArabic ? 'متابعة طلبات الخدمة' : 'Track service requests'
+    },
+    { 
       name: isArabic ? 'التقييمات' : 'Reviews', 
       path: '/dashboard/reviews', 
       icon: FaStar,
@@ -217,6 +225,13 @@ const DashboardLayout = ({ isPro = false }) => {
       icon: FaEnvelope,
       color: 'bg-indigo-500',
       description: isArabic ? 'التواصل مع العملاء' : 'Chat with clients'
+    },
+    { 
+      name: isArabic ? 'طلبات الخدمة' : 'Service Requests', 
+      path: '/pro-dashboard/service-requests', 
+      icon: FaHandshake,
+      color: 'bg-green-600',
+      description: isArabic ? 'إدارة طلبات الخدمة الواردة' : 'Manage incoming service requests'
     },
     { 
       name: isArabic ? 'خدماتي' : 'My Services', 

@@ -15,7 +15,8 @@ User = get_user_model()
 class AddressSerializer(serializers.ModelSerializer):
     class Meta:
         model = Address
-        fields = ['id', 'street_address', 'city', 'state', 'zip_code', 'country', 'is_primary']
+        ref_name = 'AListProAddressSerializer'
+        fields = ['id', 'street_address', 'city', 'state', 'zip_code', 'country', 'latitude', 'longitude', 'is_primary']
 
 
 class ServiceCategorySerializer(serializers.ModelSerializer):
@@ -34,6 +35,7 @@ class ServiceCategorySerializer(serializers.ModelSerializer):
 class ServiceRequestSerializer(serializers.ModelSerializer):
     client = UserSerializer(read_only=True)
     professional = UserSerializer(read_only=True)
+    professional_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     service_address = AddressSerializer()
     service_category = ServiceCategorySerializer(read_only=True)
     service_category_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
@@ -42,7 +44,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceRequest
         fields = [
-            'id', 'client', 'professional', 'title', 'description',
+            'id', 'client', 'professional', 'professional_id', 'title', 'description',
             'service_category', 'service_category_id', 'urgency',
             'service_address', 'preferred_date', 'flexible_schedule',
             'budget_min', 'budget_max', 'status', 'is_public', 'images',
@@ -56,13 +58,24 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         address_data = validated_data.pop('service_address')
         service_category_id = validated_data.pop('service_category_id', None)
+        professional_id = validated_data.pop('professional_id', None)
         
         # Create address
         address = Address.objects.create(user=self.context['request'].user, **address_data)
         
+        # Get professional if provided
+        professional = None
+        if professional_id:
+            try:
+                User = get_user_model()
+                professional = User.objects.get(id=professional_id)
+            except User.DoesNotExist:
+                pass
+        
         # Create service request
         service_request = ServiceRequest.objects.create(
             client=self.context['request'].user,
+            professional=professional,
             service_address=address,
             **validated_data
         )
@@ -134,10 +147,18 @@ class JobAssignmentSerializer(serializers.ModelSerializer):
 class AListHomeProProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     service_categories = ServiceCategorySerializer(many=True, read_only=True)
+    address = AddressSerializer(read_only=True)
+    full_address = serializers.SerializerMethodField()
     
     class Meta:
         model = AListHomeProProfile
         fields = '__all__'
+    
+    def get_full_address(self, obj):
+        """Get formatted full address"""
+        if obj.address:
+            return f"{obj.address.street_address}, {obj.address.city}, {obj.address.state} {obj.address.zip_code}, {obj.address.country}"
+        return None
 
 
 class AListHomeProProfileCreateUpdateSerializer(serializers.ModelSerializer):
@@ -186,9 +207,32 @@ class AListHomeProProfileCreateUpdateSerializer(serializers.ModelSerializer):
 
 
 class AListHomeProPortfolioSerializer(serializers.ModelSerializer):
+    alistpro = serializers.PrimaryKeyRelatedField(read_only=True)
+    
     class Meta:
         model = AListHomeProPortfolio
-        fields = '__all__'
+        fields = ['id', 'alistpro', 'title', 'description', 'image', 'completion_date', 'created_at', 'updated_at']
+        read_only_fields = ['alistpro', 'created_at', 'updated_at']
+    
+    def validate_title(self, value):
+        """Validate title is not empty"""
+        if not value or not value.strip():
+            raise serializers.ValidationError("Title cannot be empty")
+        return value.strip()
+    
+    def validate_image(self, value):
+        """Validate image file"""
+        if value:
+            # Check file size (5MB limit)
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError("Image file too large. Maximum size is 5MB.")
+            
+            # Check file type
+            allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+            if value.content_type not in allowed_types:
+                raise serializers.ValidationError("Unsupported image format. Use JPEG, PNG, GIF, or WebP.")
+        
+        return value
 
 
 class AListHomeProReviewSerializer(serializers.ModelSerializer):

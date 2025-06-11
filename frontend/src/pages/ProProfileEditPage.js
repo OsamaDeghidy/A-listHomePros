@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../hooks/useLanguage';
-import { alistProsService, userService } from '../services/api';
+import { alistProsService, userService, addressService } from '../services/api';
 import UserTypeSpecificFields from '../components/profile/UserTypeSpecificFields';
+import AddressPicker from '../components/common/AddressPicker';
 import '../styles/pro-profile.css';
 import {
   FaUser,
@@ -53,7 +54,10 @@ import {
   FaPlus,
   FaMinus,
   FaTrash,
-  FaUsers
+  FaUsers,
+  FaCloudUploadAlt,
+  FaBusinessTime,
+  FaCalendar
 } from 'react-icons/fa';
 
 const ProProfileEditPage = () => {
@@ -66,9 +70,10 @@ const ProProfileEditPage = () => {
   const [activeSection, setActiveSection] = useState('personal');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  const [userType, setUserType] = useState('general'); // general, contractor, specialist, consultant, agency
+  const [userType, setUserType] = useState('contractor'); // general, contractor, specialist, consultant, agency
   
   // Media uploads
   const [avatarFile, setAvatarFile] = useState(null);
@@ -78,108 +83,66 @@ const ProProfileEditPage = () => {
   const [portfolioFiles, setPortfolioFiles] = useState([]);
   const [certificateFiles, setCertificateFiles] = useState([]);
 
+  // Portfolio editing modal state
+  const [editingPortfolioItem, setEditingPortfolioItem] = useState(null);
+  const [portfolioEditTitle, setPortfolioEditTitle] = useState('');
+  const [portfolioEditDescription, setPortfolioEditDescription] = useState('');
+  const [portfolioEditCompletionDate, setPortfolioEditCompletionDate] = useState('');
+
+  // Portfolio creation modal state
+  const [showPortfolioCreateModal, setShowPortfolioCreateModal] = useState(false);
+  const [portfolioCreateTitle, setPortfolioCreateTitle] = useState('');
+  const [portfolioCreateDescription, setPortfolioCreateDescription] = useState('');
+  const [portfolioCreateCompletionDate, setPortfolioCreateCompletionDate] = useState('');
+  const [portfolioCreateFiles, setPortfolioCreateFiles] = useState([]);
+
   // Profile data structure adapted to match backend models
   const [profileData, setProfileData] = useState({
-    // Basic User Information (from CustomUser model)
-    name: '', // matches user.name in backend
+    name: '',
     email: '',
-    phone_number: '', // matches user.phone_number in backend
-    role: 'contractor', // matches user.role (UserRole.CONTRACTOR)
-    
-    // Professional Profile Information (from AListHomeProProfile model)
+    phone_number: '',
     business_name: '',
     business_description: '',
+    profession: '', // from AListHomeProProfile
+    bio: '', // from AListHomeProProfile
+    service_categories: [],
+    service_category_ids: [],
     years_of_experience: 0,
     license_number: '',
+    license_type: '', // from AListHomeProProfile
+    license_expiry: null, // from AListHomeProProfile
     insurance_info: '',
+    certifications: '', // from AListHomeProProfile
     service_radius: 50,
-    profile_image: null,
-    is_onboarded: false,
-    
-    // Service Categories (ManyToMany relation)
-    service_categories: [],
-    service_category_ids: [], // for API updates
-    
-    // Portfolio Items (related model)
-    portfolio_items: [],
-    
-    // Reviews (related model - read only)
-    reviews: [],
-    average_rating: 0,
-    
-    // Additional fields for different user types
-    // These will be stored as JSON or additional fields
-    contractor_details: {
-      license_state: '',
-      license_expiry: '',
-      insurance_provider: '',
-      insurance_policy: '',
-      insurance_expiry: '',
-      bonded: false,
-      equipment_owned: [],
-      project_types: [],
-      crew_size: 1,
-      availability_schedule: 'full_time'
-    },
-    
-    specialist_details: {
-      certifications: [],
-      specialization_areas: [],
-      consultation_rate: 0,
-      remote_consultation: true,
-      education_background: '',
-      professional_associations: [],
-      speaking_languages: [],
-      minimum_project_size: 0
-    },
-    
-    consultant_details: {
-      consultation_types: [],
-      consultation_methods: [],
-      report_delivery_time: '',
-      follow_up_included: true,
-      site_visit_rate: 0,
-      expertise_areas: [],
-      client_types: [],
-      project_duration_preference: ''
-    },
-    
-    agency_details: {
-      company_size: '',
-      established_year: '',
-      business_license: '',
-      service_areas: [],
-      team_members: [],
-      subcontractors: [],
-      quality_guarantees: [],
-      response_time: '',
-      emergency_services: false
-    },
-    
-    // Contact and social (will be stored as additional user fields or separate model)
     address: '',
     city: '',
     state: '',
     zip_code: '',
     country: 'US',
-    website: '',
-    social_links: {
-      twitter: '',
-      facebook: '',
-      instagram: '',
-      linkedin: '',
-      youtube: '',
-      tiktok: ''
-    },
-    
-    // Privacy settings
-    profile_visibility: 'public',
-    show_email: false,
-    show_phone: true,
-    show_address: false,
-    show_rates: true,
-    allow_reviews: true,
-    auto_accept_bookings: false
+    profile_image: null,
+    cover_image: null, // from AListHomeProProfile
+    website: '', // from AListHomeProProfile
+    is_onboarded: false,
+    role: 'contractor',
+    is_verified: false, // from AListHomeProProfile
+    is_featured: false, // from AListHomeProProfile
+    is_available: true, // from AListHomeProProfile
+    date_joined: null,
+    average_rating: 0,
+    total_jobs: 0,
+    jobs_completed: 0, // from AListHomeProProfile
+    response_time_hours: 24, // from AListHomeProProfile
+    hourly_rate: null, // from AListHomeProProfile
+    response_rate: 0,
+    completion_rate: 0,
+    portfolio_items: [],
+    reviews: [],
+    // Address fields
+    addresses: [],
+    primary_address: null,
+    street_address: '',
+    latitude: null,
+    longitude: null
   });
 
   // User type mapping to backend UserRole
@@ -218,7 +181,7 @@ const ProProfileEditPage = () => {
     }
   ];
 
-  // Statistics
+  // Statistics with all required properties
   const [profileStats, setProfileStats] = useState({
     profileCompletion: 0,
     totalViews: 0,
@@ -228,8 +191,20 @@ const ProProfileEditPage = () => {
     joinDate: '',
     lastActive: '',
     responseRate: 0,
-    completionRate: 0
+    completionRate: 0,
+    portfolioItems: 0,
+    serviceCategoriesCount: 0
   });
+
+  // Safe getter for profile stats
+  const getStatValue = (key, defaultValue = 0) => {
+    const value = profileStats?.[key];
+    if (value === undefined || value === null) {
+      console.log(`⚠️ ProfileStats.${key} is undefined, using default:`, defaultValue);
+      return defaultValue;
+    }
+    return value;
+  };
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -251,90 +226,159 @@ const ProProfileEditPage = () => {
     try {
       console.log('🔍 Loading professional profile data...');
       
-      // Load user profile first
-      let userProfile = null;
-      let alistProProfile = null;
+      // Parallel API calls to load all data including addresses and portfolio
+      const [userProfileResp, alistProResp, portfolioResp, reviewsResp, addressesResp] = await Promise.all([
+        userService.getProfile().catch(() => ({ data: null })),
+        alistProsService.getMyProfile().catch(() => ({ data: null })),
+        alistProsService.getPortfolio().catch(() => ({ data: [] })),
+        alistProsService.getReviews().catch(() => ({ data: [] })),
+        addressService.getAddresses().catch(() => ({ data: [] }))
+      ]);
       
-      try {
-        // Get current user data
-        const userResponse = await userService.getProfile();
-        userProfile = userResponse.data;
-        console.log('✅ User profile loaded:', userProfile);
-      } catch (userError) {
-        console.log('❌ Failed to load user profile:', userError);
-        setError(isArabic ? 'خطأ في تحميل بيانات المستخدم' : 'Error loading user data');
+      console.log('API Responses:', {
+        userProfile: userProfileResp.data,
+        alistProProfile: alistProResp.data,
+        portfolio: portfolioResp.data,
+        reviews: reviewsResp.data,
+        addresses: addressesResp.data
+      });
+      
+      // Ensure portfolio data is an array
+      let portfolioData = [];
+      if (portfolioResp.data) {
+        if (Array.isArray(portfolioResp.data)) {
+          portfolioData = portfolioResp.data;
+        } else if (portfolioResp.data.results && Array.isArray(portfolioResp.data.results)) {
+          portfolioData = portfolioResp.data.results;
+        } else if (typeof portfolioResp.data === 'object') {
+          portfolioData = [portfolioResp.data];
+        }
       }
       
-      try {
-        // Get A-List Pro profile
-        const proResponse = await alistProsService.getProfile('me');
-        alistProProfile = proResponse.data;
-        console.log('✅ A-List Pro profile loaded:', alistProProfile);
-      } catch (proError) {
-        console.log('❌ No A-List Pro profile found, user needs to create one');
-        // This is normal for new users who haven't created a pro profile yet
+      console.log('📸 Portfolio items loaded:', portfolioData);
+      
+      // Ensure addresses data is an array
+      let addressesData = [];
+      if (addressesResp.data) {
+        if (Array.isArray(addressesResp.data)) {
+          addressesData = addressesResp.data;
+        } else if (addressesResp.data.results && Array.isArray(addressesResp.data.results)) {
+          addressesData = addressesResp.data.results;
+        }
       }
       
-      // Populate profile data from API
-      populateProfileFromAPI(userProfile, alistProProfile);
+      console.log('🏠 Addresses loaded:', addressesData);
       
-      // Set user type based on backend role
-      if (userProfile?.role) {
-        const backendRoleToUserType = {
-          'contractor': 'contractor',
-          'specialist': 'specialist', 
-          'crew': 'crew',
-          'admin': 'admin'
-        };
-        setUserType(backendRoleToUserType[userProfile.role] || 'contractor');
+      if (userProfileResp.data && alistProResp.data) {
+        // API data available - populate from API
+        populateProfileFromAPI(userProfileResp.data, alistProResp.data, portfolioData, reviewsResp.data || [], addressesData);
+      } else {
+        // Fallback to mock data for development
+        console.log('⚠️ API data not available, using mock data for development');
+        loadMockProfileData();
       }
       
-      // Calculate profile completion
-      calculateProfileStats();
-      
-    } catch (err) {
-      console.error('❌ Error loading profile:', err);
-      setError(isArabic ? 'خطأ في تحميل البيانات - تم تحميل بيانات تجريبية' : 'Error loading data - Loaded demo data');
+    } catch (error) {
+      console.error('❌ Error loading profile data:', error);
+      setError(isArabic ? 'فشل في تحميل بيانات الملف الشخصي' : 'Failed to load profile data');
+      // Load mock data as fallback
       loadMockProfileData();
     } finally {
       setIsLoading(false);
     }
   };
 
-  const populateProfileFromAPI = (userProfile, alistProProfile) => {
-    const newProfileData = { ...profileData };
+  const populateProfileFromAPI = (userProfile, alistProProfile, portfolioItems, reviews, addresses = []) => {
+    console.log('📝 Populating profile from API data...');
     
-    // Populate from user profile
-    if (userProfile) {
-      newProfileData.name = userProfile.name || userProfile.get_full_name || '';
-      newProfileData.email = userProfile.email || '';
-      newProfileData.phone_number = userProfile.phone_number || '';
-      newProfileData.role = userProfile.role || 'contractor';
-    }
+    // Find primary address
+    const primaryAddress = addresses.find(addr => addr.is_primary) || addresses[0] || null;
     
-    // Populate from A-List Pro profile
-    if (alistProProfile) {
-      newProfileData.business_name = alistProProfile.business_name || '';
-      newProfileData.business_description = alistProProfile.business_description || '';
-      newProfileData.years_of_experience = alistProProfile.years_of_experience || 0;
-      newProfileData.license_number = alistProProfile.license_number || '';
-      newProfileData.insurance_info = alistProProfile.insurance_info || '';
-      newProfileData.service_radius = alistProProfile.service_radius || 50;
-      newProfileData.profile_image = alistProProfile.profile_image || null;
-      newProfileData.is_onboarded = alistProProfile.is_onboarded || false;
-      newProfileData.service_categories = alistProProfile.service_categories || [];
-      newProfileData.portfolio_items = alistProProfile.portfolio_items || [];
-      newProfileData.reviews = alistProProfile.reviews || [];
-      newProfileData.average_rating = alistProProfile.average_rating || 0;
+    setProfileData({
+      // User data
+      id: alistProProfile.id || userProfile.id,
+      name: userProfile.name || '',
+      email: userProfile.email || '',
+      phone_number: userProfile.phone_number || '',
+      role: userProfile.role || 'contractor',
+      date_joined: userProfile.date_joined || null,
       
-      // Extract service category IDs for updates
-      newProfileData.service_category_ids = (alistProProfile.service_categories || []).map(cat => cat.id);
+      // A-List Pro Profile data
+      business_name: alistProProfile.business_name || '',
+      business_description: alistProProfile.business_description || alistProProfile.bio || '',
+      profession: alistProProfile.profession || '',
+      bio: alistProProfile.bio || '',
+      years_of_experience: alistProProfile.years_of_experience || 0,
+      
+      // License and certifications
+      license_number: alistProProfile.license_number || '',
+      license_type: alistProProfile.license_type || '',
+      license_expiry: alistProProfile.license_expiry || null,
+      insurance_info: alistProProfile.insurance_info || '',
+      certifications: alistProProfile.certifications || '',
+      
+      // Service details
+      service_categories: alistProProfile.service_categories || [],
+      service_category_ids: (alistProProfile.service_categories || []).map(cat => cat.id),
+      hourly_rate: alistProProfile.hourly_rate || null,
+      service_radius: alistProProfile.service_radius || 50,
+      is_available: alistProProfile.is_available !== undefined ? alistProProfile.is_available : true,
+      
+      // Location data - use primary address or alistpro address or fallback
+      address: primaryAddress?.street_address || alistProProfile.address?.street_address || '',
+      city: primaryAddress?.city || alistProProfile.address?.city || '',
+      state: primaryAddress?.state || alistProProfile.address?.state || '',
+      zip_code: primaryAddress?.zip_code || alistProProfile.address?.zip_code || '',
+      country: primaryAddress?.country || alistProProfile.address?.country || 'Egypt',
+      latitude: primaryAddress?.latitude || alistProProfile.latitude || null,
+      longitude: primaryAddress?.longitude || alistProProfile.longitude || null,
+      
+      // Profile media
+      profile_image: alistProProfile.profile_image || userProfile.profile_image || null,
+      cover_image: alistProProfile.cover_image || null,
+      website: alistProProfile.website || '',
+      
+      // Status flags
+      is_verified: alistProProfile.is_verified || false,
+      is_featured: alistProProfile.is_featured || false,
+      is_onboarded: alistProProfile.is_onboarded || false,
+      
+      // Statistics
+      total_jobs: alistProProfile.total_jobs || 0,
+      jobs_completed: alistProProfile.jobs_completed || 0,
+      average_rating: alistProProfile.average_rating || 0,
+      response_time_hours: alistProProfile.response_time_hours || 24,
+      
+      // Portfolio and reviews
+      portfolio_items: Array.isArray(portfolioItems) ? portfolioItems : [],
+      reviews: Array.isArray(reviews) ? reviews : [],
+      
+      // Address management
+      addresses: addresses,
+      primary_address: primaryAddress,
+      
+      // User type mapping
+      userType: userProfile.role || 'contractor'
+    });
+    
+    // Set user type state
+    setUserType(userProfile.role || 'contractor');
       
       // Set avatar preview
-      setAvatarPreview(alistProProfile.profile_image || '');
+    if (alistProProfile.profile_image || userProfile.profile_image) {
+      setAvatarPreview(alistProProfile.profile_image || userProfile.profile_image);
     }
     
-    setProfileData(newProfileData);
+    // Set cover preview
+    if (alistProProfile.cover_image) {
+      setCoverPreview(alistProProfile.cover_image);
+    }
+    
+    // Calculate and set statistics
+    const stats = calculateProfileStats(userProfile, alistProProfile, portfolioItems, reviews);
+    setProfileStats(stats);
+    
+    console.log('✅ Profile populated successfully');
   };
 
   const loadMockProfileData = () => {
@@ -390,38 +434,17 @@ const ProProfileEditPage = () => {
         availability_schedule: 'full_time'
       },
       
-      // Contact info
-      address: '123 Main Street',
-      city: 'Houston',
-      state: 'TX',
-      zip_code: '77001',
-      country: 'US',
+    
       
-      // Social links
-      social_links: {
-        website: 'https://al-mahmoud-services.com',
-        facebook: 'https://facebook.com/almahmoudservices',
-        twitter: '',
-        instagram: '',
-        linkedin: '',
-        youtube: '',
-        tiktok: ''
-      },
+   
       
-      // Privacy settings
-      profile_visibility: 'public',
-      show_email: false,
-      show_phone: true,
-      show_address: false,
-      show_rates: true,
-      allow_reviews: true,
-      auto_accept_bookings: false
+      
     };
 
     setProfileData(prev => ({ ...prev, ...mockData }));
     setUserType('contractor');
     
-    // Mock stats
+    // Mock stats with all required properties
     setProfileStats({
       profileCompletion: 85,
       totalViews: 1250,
@@ -435,10 +458,39 @@ const ProProfileEditPage = () => {
     });
   };
 
-  const calculateProfileStats = () => {
+  const calculateProfileStats = (userProfile, alistProProfile, portfolioItems, reviews) => {
     const completion = calculateCompletionPercentage();
-    setProfileStats(prev => ({ ...prev, profileCompletion: completion }));
+    
+    // Calculate enhanced stats from API data
+    const stats = {
+      profileCompletion: completion,
+      totalViews: alistProProfile?.profile_views || 0,
+      totalBookings: alistProProfile?.total_jobs || 0,
+      averageRating: alistProProfile?.average_rating || 0,
+      totalReviews: reviews?.length || 0,
+      joinDate: userProfile?.date_joined || new Date().toISOString(),
+      lastActive: alistProProfile?.last_active || new Date().toISOString(),
+      responseRate: alistProProfile?.response_rate || 0,
+      completionRate: alistProProfile?.completion_rate || 0,
+      portfolioItems: portfolioItems?.length || 0,
+      serviceCategoriesCount: alistProProfile?.service_categories?.length || 0
+    };
+    
+    setProfileStats(stats);
   };
+
+  // Calculate profile stats whenever profileData changes
+  useEffect(() => {
+    if (profileData.name || profileData.business_name) {
+      const completion = calculateCompletionPercentage();
+      setProfileStats(prev => ({
+        ...prev,
+        profileCompletion: completion,
+        portfolioItems: profileData.portfolio_items?.length || 0,
+        serviceCategoriesCount: profileData.service_categories?.length || 0
+      }));
+    }
+  }, [profileData, userType]);
 
   const calculateCompletionPercentage = () => {
     const basicFields = ['name', 'phone_number', 'business_name', 'business_description'];
@@ -470,7 +522,18 @@ const ProProfileEditPage = () => {
       }
     });
     
-    return Math.round((completed / allFields.length) * 100);
+    // Additional bonuses for portfolio and service categories
+    if (profileData.portfolio_items && profileData.portfolio_items.length > 0) {
+      completed += 2; // Bonus for having portfolio
+    }
+    
+    if (profileData.service_categories && profileData.service_categories.length > 0) {
+      completed += 1; // Bonus for having service categories
+    }
+    
+    // Ensure we don't exceed 100%
+    const maxFields = allFields.length + 3; // +3 for bonuses
+    return Math.min(Math.round((completed / maxFields) * 100), 100);
   };
 
   const getUserTypeRequiredFields = () => {
@@ -613,14 +676,32 @@ const ProProfileEditPage = () => {
 
   const handleAvatarChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
+    if (!file) return;
+    
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    
+    if (!allowedTypes.includes(file.type)) {
+      setError(isArabic ? 'نوع الملف غير مدعوم. استخدم JPG, PNG, GIF أو WebP فقط' : 'Unsupported file type. Use JPG, PNG, GIF or WebP only');
+      return;
+    }
+    
+    if (file.size > maxSize) {
+      setError(isArabic ? 'حجم الملف كبير جداً. الحد الأقصى 5 ميجابايت' : 'File too large. Maximum size is 5MB');
+      return;
+    }
+    
       setAvatarFile(file);
+    
+    // Create preview
       const reader = new FileReader();
       reader.onload = (e) => {
         setAvatarPreview(e.target.result);
       };
       reader.readAsDataURL(file);
-    }
+    
+    // Clear any existing error
+    setError('');
   };
 
   const handleCoverChange = (e) => {
@@ -643,90 +724,87 @@ const ProProfileEditPage = () => {
     try {
       console.log('💾 Saving profile data:', profileData);
       
-      // Prepare user data for update
+      let updateResults = [];
+      
+      // Update user profile
+      try {
       const userData = {
         name: profileData.name,
         phone_number: profileData.phone_number,
-        // Note: role updates might need admin approval in production
-        ...(profileData.role && { role: profileData.role })
-      };
-      
-      // Prepare A-List Pro profile data
-      const proProfileData = {
-        business_name: profileData.business_name,
-        business_description: profileData.business_description,
-        years_of_experience: profileData.years_of_experience,
-        license_number: profileData.license_number,
-        insurance_info: profileData.insurance_info,
-        service_radius: profileData.service_radius,
-        service_category_ids: profileData.service_category_ids || []
-      };
-      
-      // Handle profile image upload if new file selected
-      if (avatarFile) {
-        const formData = new FormData();
-        formData.append('profile_image', avatarFile);
-        Object.keys(proProfileData).forEach(key => {
-          if (key === 'service_category_ids' && Array.isArray(proProfileData[key])) {
-            proProfileData[key].forEach(id => formData.append('service_category_ids', id));
-          } else {
-            formData.append(key, proProfileData[key]);
-          }
-        });
-        proProfileData = formData;
-      }
-      
-      let updateResults = [];
-      
-      try {
-        // Update user profile
-        console.log('📡 Updating user profile...');
-        const userUpdateResult = await userService.updateProfile(userData);
+        };
+        
+        await userService.updateProfile(userData);
         updateResults.push('user profile');
         console.log('✅ User profile updated successfully');
       } catch (userError) {
         console.log('❌ User profile update failed:', userError);
-        // Continue with pro profile update even if user update fails
       }
       
+      // Update/Create A-List Pro profile
       try {
-        // Update/Create A-List Pro profile
-        console.log('📡 Updating A-List Pro profile...');
-        const proUpdateResult = await alistProsService.updateProfile('me', proProfileData);
+        let proProfileData = {
+        business_name: profileData.business_name,
+        business_description: profileData.business_description,
+          profession: profileData.profession || '',
+          bio: profileData.bio || '',
+        years_of_experience: profileData.years_of_experience,
+        license_number: profileData.license_number,
+          license_type: profileData.license_type || '',
+          license_expiry: profileData.license_expiry || null,
+        insurance_info: profileData.insurance_info,
+          certifications: profileData.certifications || '',
+        service_radius: profileData.service_radius,
+          hourly_rate: profileData.hourly_rate || null,
+          response_time_hours: profileData.response_time_hours || 24,
+          is_available: profileData.is_available !== false,
+          website: profileData.website || '',
+      };
+      
+        // Add service category IDs if available
+        if (profileData.service_category_ids && profileData.service_category_ids.length > 0) {
+          proProfileData.service_category_ids = profileData.service_category_ids;
+        }
+        
+        // Handle avatar upload
+      if (avatarFile) {
+        const formData = new FormData();
+        formData.append('profile_image', avatarFile);
+          
+          // Add other fields to FormData, excluding profile_image since we already added the file
+        Object.keys(proProfileData).forEach(key => {
+            if (key === 'profile_image') {
+              // Skip profile_image since we already added the file
+              return;
+            }
+          if (key === 'service_category_ids' && Array.isArray(proProfileData[key])) {
+            proProfileData[key].forEach(id => formData.append('service_category_ids', id));
+            } else if (proProfileData[key] !== null && proProfileData[key] !== undefined) {
+            formData.append(key, proProfileData[key]);
+          }
+        });
+          
+        proProfileData = formData;
+        } else {
+          // Remove profile_image from data if no new file is uploaded
+          delete proProfileData.profile_image;
+        }
+        
+        // Try to update existing profile
+        try {
+          await alistProsService.updateMyProfile(proProfileData);
         updateResults.push('professional profile');
         console.log('✅ A-List Pro profile updated successfully');
-      } catch (proError) {
-        console.log('❌ A-List Pro profile update failed, trying to create new profile...');
-        
-        try {
+        } catch (updateError) {
           // If update fails, try to create new profile
-          const proCreateResult = await alistProsService.createProfile(proProfileData);
+          console.log('❌ Update failed, trying to create new profile...');
+          await alistProsService.createProfile(proProfileData);
           updateResults.push('new professional profile created');
           console.log('✅ New A-List Pro profile created successfully');
-        } catch (createError) {
-          console.log('❌ Failed to create new A-List Pro profile:', createError);
-          throw createError;
         }
-      }
-      
-      // Update portfolio items if any changes
-      if (portfolioFiles.length > 0) {
-        try {
-          console.log('📡 Updating portfolio items...');
-          for (const portfolioFile of portfolioFiles) {
-            const portfolioData = new FormData();
-            portfolioData.append('image', portfolioFile.file);
-            portfolioData.append('title', portfolioFile.title || 'Portfolio Item');
-            portfolioData.append('description', portfolioFile.description || 'Portfolio description');
-            
-            await alistProsService.createPortfolioItem(portfolioData);
-          }
-          updateResults.push('portfolio items');
-          console.log('✅ Portfolio items updated successfully');
-        } catch (portfolioError) {
-          console.log('❌ Portfolio update failed:', portfolioError);
-          // Don't fail entire save for portfolio errors
-        }
+        
+      } catch (proError) {
+        console.log('❌ Professional profile operation failed:', proError);
+        throw proError;
       }
       
       if (updateResults.length > 0) {
@@ -735,13 +813,10 @@ const ProProfileEditPage = () => {
           `Successfully updated ${updateResults.join(' and ')}`
         );
         
-        // Reload profile data to get latest from server
+        // Reload profile data after successful save
         setTimeout(() => {
           loadProfileData();
         }, 1000);
-        
-        // Calculate updated stats
-        calculateProfileStats();
         
         // Auto-hide success message
         setTimeout(() => setSuccess(''), 5000);
@@ -755,21 +830,37 @@ const ProProfileEditPage = () => {
       let errorMessage = isArabic ? 'خطأ في حفظ الملف الشخصي' : 'Error saving profile';
       
       if (err.response) {
-        if (err.response.status === 401) {
+        switch (err.response.status) {
+          case 401:
           errorMessage = isArabic ? 'يجب تسجيل الدخول مرة أخرى' : 'Please log in again';
-        } else if (err.response.status === 403) {
+            break;
+          case 403:
           errorMessage = isArabic ? 'ليس لديك صلاحية لتحديث هذا الملف' : 'You do not have permission to update this profile';
-        } else if (err.response.status === 400) {
+            break;
+          case 400:
           const validationErrors = err.response.data;
           errorMessage = isArabic ? 'بيانات غير صحيحة' : 'Invalid data provided';
           
-          // Extract specific field errors
           if (validationErrors && typeof validationErrors === 'object') {
             const errorFields = Object.keys(validationErrors).slice(0, 3);
             if (errorFields.length > 0) {
-              errorMessage += ': ' + errorFields.join(', ');
+                const errorDetails = errorFields.map(field => {
+                  const fieldError = validationErrors[field];
+                  if (Array.isArray(fieldError)) {
+                    return `${field}: ${fieldError[0]}`;
+                  }
+                  return `${field}: ${fieldError}`;
+                });
+                errorMessage += ': ' + errorDetails.join(', ');
             }
           }
+            break;
+          case 413:
+            errorMessage = isArabic ? 'حجم الملف كبير جداً' : 'File too large';
+            break;
+          case 415:
+            errorMessage = isArabic ? 'نوع الملف غير مدعوم' : 'Unsupported file type';
+            break;
         }
       }
       
@@ -801,6 +892,373 @@ const ProProfileEditPage = () => {
     }]);
   };
 
+  // Enhanced portfolio management
+  const handlePortfolioUpload = async (files, portfolioData = {}) => {
+    if (!files || files.length === 0) return;
+    
+    // Check if user has a profile first
+    if (!profileData.id && !profileData.business_name) {
+      setError(isArabic ? 'يجب إنشاء الملف الشخصي أولاً قبل رفع الأعمال' : 'Please create your profile first before uploading portfolio items');
+      return;
+    }
+    
+    const newFiles = Array.from(files);
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    
+    for (const file of newFiles) {
+      // Validate file
+      if (!allowedTypes.includes(file.type)) {
+        setError(isArabic ? 'نوع الملف غير مدعوم. استخدم JPG, PNG, GIF أو WebP فقط' : 'Unsupported file type. Use JPG, PNG, GIF or WebP only');
+        continue;
+      }
+      
+      if (file.size > maxSize) {
+        setError(isArabic ? 'حجم الملف كبير جداً. الحد الأقصى 5 ميجابايت' : 'File too large. Maximum size is 5MB');
+        continue;
+      }
+      
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('title', portfolioData.title || file.name.split('.')[0]);
+        formData.append('description', portfolioData.description || (isArabic ? 'عمل من معرض أعمالي' : 'Work from my portfolio'));
+        
+        // Add completion_date if provided
+        if (portfolioData.completion_date) {
+          formData.append('completion_date', portfolioData.completion_date);
+        }
+        
+        // Show loading state
+        setIsSaving(true);
+        
+        console.log('📤 Uploading portfolio item:', file.name);
+        const response = await alistProsService.createPortfolio(formData);
+        console.log('✅ Portfolio item uploaded successfully:', response.data);
+        
+        // Update local state
+        setProfileData(prev => ({
+          ...prev,
+          portfolio_items: [...(prev.portfolio_items || []), response.data]
+        }));
+        
+        setSuccess(isArabic ? 'تم رفع الصورة بنجاح' : 'Image uploaded successfully');
+        
+        // Update stats
+        setProfileStats(prev => ({
+          ...prev,
+          portfolioItems: (prev.portfolioItems || 0) + 1
+        }));
+        
+      } catch (err) {
+        console.error('❌ Error uploading portfolio item:', err);
+        let errorMessage = isArabic ? 'فشل في رفع الصورة' : 'Failed to upload image';
+        
+        if (err.response?.status === 400) {
+          const errorData = err.response.data;
+          if (typeof errorData === 'object' && errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (typeof errorData === 'object') {
+            // Handle field errors
+            const fieldErrors = Object.keys(errorData).map(key => 
+              `${key}: ${Array.isArray(errorData[key]) ? errorData[key][0] : errorData[key]}`
+            );
+            errorMessage = fieldErrors.join(', ');
+          }
+        } else if (err.response?.status === 403) {
+          errorMessage = isArabic ? 'يجب إنشاء الملف الشخصي أولاً' : 'Please create your profile first';
+        }
+        
+        setError(errorMessage);
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
+
+  // Delete portfolio item
+  const handleDeletePortfolioItem = async (itemId) => {
+    if (!window.confirm(isArabic ? 'هل أنت متأكد من حذف هذا العنصر؟' : 'Are you sure you want to delete this item?')) {
+      return;
+    }
+    
+    try {
+      setIsSaving(true);
+      console.log('🗑️ Deleting portfolio item:', itemId);
+      await alistProsService.deletePortfolio(itemId);
+      console.log('✅ Portfolio item deleted successfully');
+      
+      // Update local state
+      setProfileData(prev => ({
+        ...prev,
+        portfolio_items: (prev.portfolio_items || []).filter(item => item.id !== itemId)
+      }));
+      
+      // Update stats
+      setProfileStats(prev => ({
+        ...prev,
+        portfolioItems: Math.max((prev.portfolioItems || 0) - 1, 0)
+      }));
+      
+      setSuccess(isArabic ? 'تم حذف العنصر بنجاح' : 'Item deleted successfully');
+      
+    } catch (err) {
+      console.error('❌ Error deleting portfolio item:', err);
+      setError(isArabic ? 'فشل في حذف العنصر' : 'Failed to delete item');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Edit portfolio item
+  const handleEditPortfolioItem = async (itemId, newTitle, newDescription, newCompletionDate) => {
+    try {
+      setIsSaving(true);
+      console.log('✏️ Editing portfolio item:', itemId);
+      
+      const updateData = {
+        title: newTitle,
+        description: newDescription
+      };
+      
+      // Add completion_date if provided
+      if (newCompletionDate) {
+        updateData.completion_date = newCompletionDate;
+      }
+      
+      const response = await alistProsService.updatePortfolio(itemId, updateData);
+      
+      console.log('✅ Portfolio item updated successfully:', response.data);
+      
+      // Update local state
+      setProfileData(prev => ({
+        ...prev,
+        portfolio_items: (prev.portfolio_items || []).map(item => 
+          item.id === itemId ? { ...item, ...response.data } : item
+        )
+      }));
+      
+      setSuccess(isArabic ? 'تم تحديث العنصر بنجاح' : 'Item updated successfully');
+      
+      // Close modal
+      setEditingPortfolioItem(null);
+      setPortfolioEditTitle('');
+      setPortfolioEditDescription('');
+      setPortfolioEditCompletionDate('');
+      
+    } catch (err) {
+      console.error('❌ Error updating portfolio item:', err);
+      setError(isArabic ? 'فشل في تحديث العنصر' : 'Failed to update item');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Open edit modal
+  const openEditPortfolioModal = (item) => {
+    setEditingPortfolioItem(item);
+    setPortfolioEditTitle(item.title || '');
+    setPortfolioEditDescription(item.description || '');
+    setPortfolioEditCompletionDate(item.completion_date || '');
+  };
+
+  // Cancel edit modal
+  const cancelEditPortfolio = () => {
+    setEditingPortfolioItem(null);
+    setPortfolioEditTitle('');
+    setPortfolioEditDescription('');
+    setPortfolioEditCompletionDate('');
+  };
+
+  // Save portfolio edit
+  const savePortfolioEdit = () => {
+    if (editingPortfolioItem) {
+      handleEditPortfolioItem(editingPortfolioItem.id, portfolioEditTitle, portfolioEditDescription, portfolioEditCompletionDate);
+    }
+  };
+
+  // Portfolio creation modal functions
+  const openPortfolioCreateModal = () => {
+    setShowPortfolioCreateModal(true);
+    setPortfolioCreateTitle('');
+    setPortfolioCreateDescription('');
+    setPortfolioCreateCompletionDate('');
+    setPortfolioCreateFiles([]);
+  };
+
+  const cancelPortfolioCreate = () => {
+    setShowPortfolioCreateModal(false);
+    setPortfolioCreateTitle('');
+    setPortfolioCreateDescription('');
+    setPortfolioCreateCompletionDate('');
+    setPortfolioCreateFiles([]);
+  };
+
+  const handlePortfolioCreateFiles = (files) => {
+    setPortfolioCreateFiles(Array.from(files));
+  };
+
+  const savePortfolioCreate = async () => {
+    if (!portfolioCreateTitle.trim() || portfolioCreateFiles.length === 0) {
+      setError(isArabic ? 'يجب إدخال العنوان واختيار الصور' : 'Title and images are required');
+      return;
+    }
+
+    const portfolioData = {
+      title: portfolioCreateTitle,
+      description: portfolioCreateDescription,
+      completion_date: portfolioCreateCompletionDate || null
+    };
+
+    await handlePortfolioUpload(portfolioCreateFiles, portfolioData);
+    
+    // Close modal if successful
+    if (!error) {
+      setShowPortfolioCreateModal(false);
+      setPortfolioCreateTitle('');
+      setPortfolioCreateDescription('');
+      setPortfolioCreateCompletionDate('');
+      setPortfolioCreateFiles([]);
+    }
+  };
+
+  // Address management functions
+  const handleAddressCreate = async (addressData) => {
+    try {
+      setIsSaving(true);
+      console.log('🏠 Creating new address:', addressData);
+      
+      const response = await addressService.createAddressWithGeocoding(addressData);
+      console.log('✅ Address created successfully:', response.data);
+      
+      // Update local state
+      setProfileData(prev => ({
+        ...prev,
+        addresses: [...(prev.addresses || []), response.data],
+        primary_address: response.data.is_primary ? response.data : prev.primary_address
+      }));
+      
+      setSuccess(isArabic ? 'تم إضافة العنوان بنجاح' : 'Address added successfully');
+      
+      // Auto-hide success message
+      setTimeout(() => setSuccess(''), 3000);
+      
+    } catch (err) {
+      console.error('❌ Error creating address:', err);
+      let errorMessage = isArabic ? 'فشل في إضافة العنوان' : 'Failed to add address';
+      
+      if (err.response?.status === 400 && err.response?.data) {
+        const errors = err.response.data;
+        if (typeof errors === 'object') {
+          const errorFields = Object.keys(errors);
+          if (errorFields.length > 0) {
+            const fieldError = errors[errorFields[0]];
+            if (Array.isArray(fieldError)) {
+              errorMessage = fieldError[0];
+            } else {
+              errorMessage = fieldError;
+            }
+          }
+        }
+      }
+      
+      setError(errorMessage);
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddressUpdate = async (addressId, addressData) => {
+    try {
+      setIsSaving(true);
+      console.log('🏠 Updating address:', addressId, addressData);
+      
+      const response = await addressService.updateAddress(addressId, addressData);
+      console.log('✅ Address updated successfully:', response.data);
+      
+      // Update local state
+      setProfileData(prev => ({
+        ...prev,
+        addresses: prev.addresses.map(addr => 
+          addr.id === addressId ? response.data : addr
+        ),
+        primary_address: response.data.is_primary ? response.data : prev.primary_address
+      }));
+      
+      setSuccess(isArabic ? 'تم تحديث العنوان بنجاح' : 'Address updated successfully');
+      setTimeout(() => setSuccess(''), 3000);
+      
+    } catch (err) {
+      console.error('❌ Error updating address:', err);
+      setError(isArabic ? 'فشل في تحديث العنوان' : 'Failed to update address');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleAddressDelete = async (addressId) => {
+    if (!window.confirm(isArabic ? 'هل أنت متأكد من حذف هذا العنوان؟' : 'Are you sure you want to delete this address?')) {
+      return;
+    }
+    
+    try {
+      setIsSaving(true);
+      console.log('🗑️ Deleting address:', addressId);
+      
+      await addressService.deleteAddress(addressId);
+      console.log('✅ Address deleted successfully');
+      
+      // Update local state
+      setProfileData(prev => ({
+        ...prev,
+        addresses: prev.addresses.filter(addr => addr.id !== addressId),
+        primary_address: prev.primary_address?.id === addressId ? null : prev.primary_address
+      }));
+      
+      setSuccess(isArabic ? 'تم حذف العنوان بنجاح' : 'Address deleted successfully');
+      setTimeout(() => setSuccess(''), 3000);
+      
+    } catch (err) {
+      console.error('❌ Error deleting address:', err);
+      setError(isArabic ? 'فشل في حذف العنوان' : 'Failed to delete address');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSetPrimaryAddress = async (addressId) => {
+    try {
+      setIsSaving(true);
+      console.log('🏠 Setting primary address:', addressId);
+      
+      await addressService.setPrimaryAddress(addressId);
+      console.log('✅ Primary address set successfully');
+      
+      // Update local state
+      setProfileData(prev => ({
+        ...prev,
+        addresses: prev.addresses.map(addr => ({
+          ...addr,
+          is_primary: addr.id === addressId
+        })),
+        primary_address: prev.addresses.find(addr => addr.id === addressId)
+      }));
+      
+      setSuccess(isArabic ? 'تم تحديد العنوان الأساسي بنجاح' : 'Primary address set successfully');
+      setTimeout(() => setSuccess(''), 3000);
+      
+    } catch (err) {
+      console.error('❌ Error setting primary address:', err);
+      setError(isArabic ? 'فشل في تحديد العنوان الأساسي' : 'Failed to set primary address');
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Section configurations
   const sections = [
     {
@@ -819,25 +1277,7 @@ const ProProfileEditPage = () => {
       id: 'professional',
       name: isArabic ? 'المعلومات المهنية' : 'Professional Info',
       icon: FaBriefcase,
-      description: isArabic ? 'تفاصيل العمل والخدمات' : 'Business and service details'
-    },
-    {
-      id: 'usertype',
-      name: isArabic ? 'نوع المزود' : 'Provider Type',
-      icon: FaIdCard,
-      description: isArabic ? 'نوع مقدم الخدمة' : 'Service provider type'
-    },
-    {
-      id: 'services',
-      name: isArabic ? 'الخدمات' : 'Services',
-      icon: FaTools,
-      description: isArabic ? 'الخدمات المقدمة' : 'Services offered'
-    },
-    {
-      id: 'availability',
-      name: isArabic ? 'أوقات العمل' : 'Availability',
-      icon: FaClock,
-      description: isArabic ? 'جدول العمل والتوفر' : 'Working hours and schedule'
+      description: isArabic ? 'تفاصيل العمل والخدمات والنوع' : 'Business details, services and provider type'
     },
     {
       id: 'media',
@@ -846,22 +1286,10 @@ const ProProfileEditPage = () => {
       description: isArabic ? 'الصور ومعرض الأعمال' : 'Photos and portfolio'
     },
     {
-      id: 'contact',
-      name: isArabic ? 'معلومات الاتصال' : 'Contact Info',
-      icon: FaPhone,
-      description: isArabic ? 'الهاتف والعنوان' : 'Phone and address details'
-    },
-    {
-      id: 'social',
-      name: isArabic ? 'وسائل التواصل' : 'Social Links',
-      icon: FaLink,
-      description: isArabic ? 'روابط الشبكات الاجتماعية' : 'Social media profiles'
-    },
-    {
-      id: 'privacy',
-      name: isArabic ? 'الخصوصية' : 'Privacy',
-      icon: FaShieldAlt,
-      description: isArabic ? 'إعدادات الخصوصية' : 'Privacy settings'
+      id: 'address',
+      name: isArabic ? 'العنوان' : 'Address',
+      icon: FaMapMarkerAlt,
+      description: isArabic ? 'العنوان والموقع الجغرافي' : 'Address and location details'
     }
   ];
 
@@ -874,6 +1302,21 @@ const ProProfileEditPage = () => {
       </div>
     );
   }
+
+  // Safety check for profileStats
+  const safeProfileStats = profileStats || {
+    profileCompletion: 0,
+    totalViews: 0,
+    totalBookings: 0,
+    averageRating: 0,
+    totalReviews: 0,
+    joinDate: '',
+    lastActive: '',
+    responseRate: 0,
+    completionRate: 0,
+    portfolioItems: 0,
+    serviceCategoriesCount: 0
+  };
 
   return (
     <div className={`min-h-screen bg-gray-50 ${isArabic ? 'rtl' : 'ltr'}`}>
@@ -944,41 +1387,110 @@ const ProProfileEditPage = () => {
               <div className="relative pt-1">
                 <div className="flex mb-2 items-center justify-between">
                   <div>
-                    <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
-                      {profileStats.profileCompletion}%
+                    <span className={`text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-white ${
+                      safeProfileStats.profileCompletion >= 80 ? 'bg-green-500' :
+                      safeProfileStats.profileCompletion >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}>
+                      {safeProfileStats.profileCompletion}%
                     </span>
                   </div>
+                  <div className="text-right">
+                    <span className="text-xs font-semibold text-gray-600">
+                      {(safeProfileStats.profileCompletion || 0) >= 80 ? (isArabic ? 'ممتاز' : 'Excellent') :
+                       (safeProfileStats.profileCompletion || 0) >= 60 ? (isArabic ? 'جيد' : 'Good') : 
+                       (isArabic ? 'يحتاج تحسين' : 'Needs Improvement')}
+                    </span>
                 </div>
-                <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-200">
+                </div>
+                <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-gray-200">
                   <div
-                    style={{ width: `${profileStats.profileCompletion}%` }}
-                    className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-500"
+                    style={{ width: `${safeProfileStats.profileCompletion || 0}%` }}
+                    className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center transition-all duration-500 ${
+                      (safeProfileStats.profileCompletion || 0) >= 80 ? 'bg-green-500' :
+                      (safeProfileStats.profileCompletion || 0) >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                    }`}
                   ></div>
                 </div>
               </div>
               
-              {/* Quick Stats */}
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{profileStats.totalViews}</div>
-                  <div className="text-xs text-gray-500">{isArabic ? 'مشاهدات' : 'Views'}</div>
+              {/* Enhanced Quick Stats */}
+              <div className="grid grid-cols-2 gap-4 mt-6">
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">{safeProfileStats.totalViews || 0}</div>
+                  <div className="text-xs text-gray-600">{isArabic ? 'مشاهدات الملف' : 'Profile Views'}</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{profileStats.totalBookings}</div>
-                  <div className="text-xs text-gray-500">{isArabic ? 'حجوزات' : 'Bookings'}</div>
+                <div className="text-center p-3 bg-green-50 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{safeProfileStats.totalBookings || 0}</div>
+                  <div className="text-xs text-gray-600">{isArabic ? 'إجمالي المشاريع' : 'Total Projects'}</div>
                 </div>
-                <div className="text-center">
+                <div className="text-center p-3 bg-yellow-50 rounded-lg">
                   <div className="text-2xl font-bold text-yellow-600 flex items-center justify-center">
                     <FaStar className="mr-1" />
-                    {profileStats.averageRating}
+                    {safeProfileStats.averageRating || 0}
                   </div>
-                  <div className="text-xs text-gray-500">{isArabic ? 'التقييم' : 'Rating'}</div>
+                  <div className="text-xs text-gray-600">{isArabic ? 'متوسط التقييم' : 'Average Rating'}</div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{profileStats.responseRate}%</div>
-                  <div className="text-xs text-gray-500">{isArabic ? 'معدل الرد' : 'Response'}</div>
+                <div className="text-center p-3 bg-purple-50 rounded-lg">
+                  <div className="text-2xl font-bold text-purple-600">{safeProfileStats.responseRate || 0}%</div>
+                  <div className="text-xs text-gray-600">{isArabic ? 'معدل الاستجابة' : 'Response Rate'}</div>
                 </div>
               </div>
+
+              {/* Additional Stats */}
+              <div className="mt-6 pt-4 border-t border-gray-100">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">{isArabic ? 'المراجعات:' : 'Reviews:'}</span>
+                    <span className="font-medium">{safeProfileStats.totalReviews || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">{isArabic ? 'معرض الأعمال:' : 'Portfolio:'}</span>
+                    <span className="font-medium">{safeProfileStats.portfolioItems || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">{isArabic ? 'معدل الإنجاز:' : 'Completion:'}</span>
+                    <span className="font-medium">{safeProfileStats.completionRate || 0}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">{isArabic ? 'الخدمات:' : 'Services:'}</span>
+                    <span className="font-medium">{safeProfileStats.serviceCategoriesCount || 0}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Member Since */}
+              <div className="mt-4 text-center text-xs text-gray-500">
+                {isArabic ? 'عضو منذ' : 'Member since'} {' '}
+                {safeProfileStats.joinDate ? new Date(safeProfileStats.joinDate).toLocaleDateString(
+                  isArabic ? 'ar-SA' : 'en-US', 
+                  { year: 'numeric', month: 'long' }
+                ) : 'N/A'}
+              </div>
+
+              {/* Profile Tips */}
+              {(safeProfileStats.profileCompletion || 0) < 80 && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-start">
+                    <FaInfoCircle className="h-4 w-4 text-yellow-600 mt-0.5 mr-2 flex-shrink-0" />
+                    <div className="text-xs text-yellow-800">
+                      <p className="font-medium mb-1">
+                        {isArabic ? 'نصائح لتحسين ملفك:' : 'Tips to improve your profile:'}
+                      </p>
+                      <ul className="list-disc list-inside space-y-1">
+                        {(safeProfileStats.portfolioItems || 0) === 0 && (
+                          <li>{isArabic ? 'أضف صور أعمالك السابقة' : 'Add photos of your work'}</li>
+                        )}
+                        {!profileData.business_description && (
+                          <li>{isArabic ? 'اكتب وصف شامل لعملك' : 'Write a comprehensive business description'}</li>
+                        )}
+                        {(safeProfileStats.serviceCategoriesCount || 0) === 0 && (
+                          <li>{isArabic ? 'حدد فئات الخدمات التي تقدمها' : 'Specify your service categories'}</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Navigation Menu */}
@@ -1102,6 +1614,59 @@ const ProProfileEditPage = () => {
                 
                 {activeSection === 'professional' && (
                   <div className="space-y-6">
+                    {/* Provider Type Selection */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-100">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {isArabic ? 'نوع مقدم الخدمة' : 'Service Provider Type'}
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        {isArabic ? 'اختر نوع المحترف المناسب لعملك' : 'Choose the professional type that best matches your business'}
+                      </p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {userTypes.map((type) => {
+                          const Icon = type.icon;
+                          const isActive = userType === type.id;
+                          
+                          return (
+                            <motion.div
+                              key={type.id}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              className={`cursor-pointer p-4 border-2 rounded-xl transition-all duration-200 ${
+                                isActive
+                                  ? 'border-blue-500 bg-blue-50'
+                                  : 'border-gray-200 bg-white hover:border-gray-300'
+                              }`}
+                              onClick={() => handleUserTypeChange(type.id)}
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className={`p-2 rounded-lg ${isActive ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                                  <Icon className={`text-xl ${isActive ? 'text-blue-600' : 'text-gray-600'}`} />
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="font-semibold text-gray-900">{type.name}</h4>
+                                  <p className="text-sm text-gray-600">{type.description}</p>
+                                  {isActive && (
+                                    <div className="mt-2 flex items-center text-sm text-green-600">
+                                      <FaCheck className="mr-1" />
+                                      {isArabic ? 'محدد حالياً' : 'Currently selected'}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Basic Business Information */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {isArabic ? 'معلومات العمل الأساسية' : 'Basic Business Information'}
+                      </h3>
+                      
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1118,28 +1683,29 @@ const ProProfileEditPage = () => {
                       
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'سنوات الخبرة' : 'Years of Experience'}
+                            {isArabic ? 'المهنة/التخصص' : 'Profession/Specialization'}
                         </label>
                         <input
-                          type="number"
-                          min="0"
-                          value={profileData.years_of_experience}
-                          onChange={(e) => handleInputChange('years_of_experience', parseInt(e.target.value) || 0)}
+                            type="text"
+                            value={profileData.profession || ''}
+                            onChange={(e) => handleInputChange('profession', e.target.value)}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="0"
+                            placeholder={isArabic ? 'مثل: مقاول كهرباء، سباك، نجار' : 'e.g: Electrical Contractor, Plumber, Carpenter'}
                         />
                       </div>
                       
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'رقم الترخيص' : 'License Number'}
+                            {isArabic ? 'سنوات الخبرة' : 'Years of Experience'}
                         </label>
                         <input
-                          type="text"
-                          value={profileData.license_number}
-                          onChange={(e) => handleInputChange('license_number', e.target.value)}
+                            type="number"
+                            min="0"
+                            max="50"
+                            value={profileData.years_of_experience}
+                            onChange={(e) => handleInputChange('years_of_experience', parseInt(e.target.value) || 0)}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل رقم الترخيص' : 'Enter license number'}
+                            placeholder="0"
                         />
                       </div>
                       
@@ -1159,7 +1725,7 @@ const ProProfileEditPage = () => {
                       </div>
                     </div>
                     
-                    <div>
+                      <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {isArabic ? 'وصف العمل' : 'Business Description'}
                       </label>
@@ -1168,399 +1734,573 @@ const ProProfileEditPage = () => {
                         onChange={(e) => handleInputChange('business_description', e.target.value)}
                         rows="4"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical"
-                        placeholder={isArabic ? 'صف عملك وخدماتك' : 'Describe your business and services'}
+                          placeholder={isArabic ? 'صف عملك وخدماتك بالتفصيل...' : 'Describe your business and services in detail...'}
                       />
                     </div>
                     
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {isArabic ? 'السيرة المهنية' : 'Professional Bio'}
+                        </label>
+                        <textarea
+                          value={profileData.bio || ''}
+                          onChange={(e) => handleInputChange('bio', e.target.value)}
+                          rows="3"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical"
+                          placeholder={isArabic ? 'اكتب نبذة مختصرة عن خبرتك المهنية...' : 'Write a brief professional biography...'}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Licensing and Certifications */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {isArabic ? 'التراخيص والشهادات' : 'Licensing & Certifications'}
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {isArabic ? 'معلومات التأمين' : 'Insurance Information'}
+                            {isArabic ? 'رقم الترخيص' : 'License Number'}
                       </label>
                       <input
                         type="text"
-                        value={profileData.insurance_info}
-                        onChange={(e) => handleInputChange('insurance_info', e.target.value)}
+                            value={profileData.license_number}
+                            onChange={(e) => handleInputChange('license_number', e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder={isArabic ? 'أدخل معلومات التأمين' : 'Enter insurance information'}
+                            placeholder={isArabic ? 'أدخل رقم الترخيص' : 'Enter license number'}
                       />
                     </div>
-                  </div>
-                )}
-                
-                {activeSection === 'usertype' && (
-                  <div className="space-y-6">
-                    <p className="text-gray-600">
-                      {isArabic ? 'اختر نوع المحترف المناسب لعملك' : 'Choose the professional type that best matches your business'}
-                    </p>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {userTypes.map((type) => {
-                        const Icon = type.icon;
-                        const isActive = userType === type.id;
                         
-                        return (
-                          <motion.div
-                            key={type.id}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
-                            className={`user-type-card ${type.color} ${isActive ? 'active' : ''} cursor-pointer p-6 border-2 rounded-xl transition-all duration-200 ${
-                              isActive
-                                ? `border-${type.color}-500 bg-${type.color}-50`
-                                : 'border-gray-200 bg-white hover:border-gray-300'
-                            }`}
-                            onClick={() => handleUserTypeChange(type.id)}
-                          >
-                            <div className="flex items-start space-x-4">
-                              <div className={`p-3 rounded-lg bg-${type.color}-100`}>
-                                <Icon className={`text-2xl text-${type.color}-600`} />
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {isArabic ? 'نوع الترخيص' : 'License Type'}
+                          </label>
+                          <input
+                            type="text"
+                            value={profileData.license_type || ''}
+                            onChange={(e) => handleInputChange('license_type', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder={isArabic ? 'مثل: ترخيص مقاولات عامة' : 'e.g: General Contractor License'}
+                          />
+                  </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {isArabic ? 'تاريخ انتهاء الترخيص' : 'License Expiry Date'}
+                          </label>
+                          <input
+                            type="date"
+                            value={profileData.license_expiry || ''}
+                            onChange={(e) => handleInputChange('license_expiry', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {isArabic ? 'معلومات التأمين' : 'Insurance Information'}
+                          </label>
+                          <input
+                            type="text"
+                            value={profileData.insurance_info}
+                            onChange={(e) => handleInputChange('insurance_info', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder={isArabic ? 'شركة التأمين ورقم البوليصة' : 'Insurance company and policy number'}
+                          />
                               </div>
-                              <div className="flex-1">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                                  {type.name}
-                                </h3>
-                                <p className="text-sm text-gray-600">
-                                  {type.description}
-                                </p>
-                                {isActive && (
-                                  <div className="mt-3 flex items-center text-sm text-green-600">
-                                    <FaCheck className="mr-2" />
-                                    {isArabic ? 'محدد حالياً' : 'Currently selected'}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
                     </div>
                     
-                    {/* User Type Specific Fields */}
-                    <div className="mt-8">
-                      <UserTypeSpecificFields
-                        userType={userType}
-                        profileData={profileData}
-                        handleInputChange={handleInputChange}
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {isArabic ? 'الشهادات المهنية' : 'Professional Certifications'}
+                        </label>
+                        <textarea
+                          value={profileData.certifications || ''}
+                          onChange={(e) => handleInputChange('certifications', e.target.value)}
+                          rows="3"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical"
+                          placeholder={isArabic ? 'اذكر الشهادات المهنية والدورات التدريبية...' : 'List professional certifications and training courses...'}
                       />
                     </div>
                   </div>
-                )}
-                
-                {activeSection === 'services' && (
-                  <div className="space-y-6">
-                    <p className="text-gray-600">
-                      {isArabic ? 'إدارة الخدمات وفئات الخدمات التي تقدمها' : 'Manage the services and service categories you offer'}
-                    </p>
                     
-                    {/* Service Categories */}
-                    <div>
+                    {/* Service Categories and Pricing */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
                       <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                        {isArabic ? 'فئات الخدمات' : 'Service Categories'}
+                        {isArabic ? 'الخدمات والأسعار' : 'Services & Pricing'}
                       </h3>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Current Service Categories */}
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium text-gray-900">
+                            {isArabic ? 'فئات الخدمات الحالية' : 'Current Service Categories'}
+                          </h4>
+                          <span className="text-sm text-gray-500">
+                            {(profileData.service_categories || []).length} {isArabic ? 'فئة' : 'categories'}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {(profileData.service_categories || []).map((category, index) => (
                           <div
                             key={category.id || index}
-                            className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-lg"
+                              className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg"
                           >
-                            <div>
-                              <h4 className="font-medium text-blue-900">{category.name}</h4>
-                              {category.description && (
-                                <p className="text-sm text-blue-700">{category.description}</p>
-                              )}
+                              <div className="flex items-center">
+                                <FaTools className="h-4 w-4 text-blue-600 mr-2" />
+                                <span className="font-medium text-blue-900">{category.name}</span>
                             </div>
                             <button
                               type="button"
                               onClick={() => removeServiceCategory(category.id)}
-                              className="text-red-500 hover:text-red-700 transition-colors"
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title={isArabic ? 'إزالة' : 'Remove'}
                             >
-                              <FaTimes />
+                                <FaTimes className="h-3 w-3" />
                             </button>
                           </div>
                         ))}
                       </div>
                       
-                      {profileData.service_categories?.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">
-                          <FaInfoCircle className="mx-auto text-4xl mb-4 text-gray-400" />
-                          <p>{isArabic ? 'لم يتم إضافة فئات خدمات بعد' : 'No service categories added yet'}</p>
+                        {(profileData.service_categories || []).length === 0 && (
+                          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                            <FaInfoCircle className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                            <p className="text-gray-600">
+                              {isArabic ? 'لم يتم إضافة فئات خدمات بعد' : 'No service categories added yet'}
+                            </p>
+                            <button
+                              type="button"
+                              className="mt-2 inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                              onClick={() => {/* Handle add service category */}}
+                            >
+                              <FaPlus className="mr-1 h-3 w-3" />
+                              {isArabic ? 'إضافة فئة' : 'Add Category'}
+                            </button>
                         </div>
                       )}
                     </div>
                     
-                    {/* Portfolio Preview */}
+                      {/* Pricing Information */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                        {isArabic ? 'معرض الأعمال' : 'Portfolio'}
-                      </h3>
-                      
-                      <div className="portfolio-grid">
-                        {(profileData.portfolio_items || []).map((item, index) => (
-                          <div key={item.id || index} className="portfolio-item">
-                            {item.image ? (
-                              <img src={item.image} alt={item.title} />
-                            ) : (
-                              <div className="upload-placeholder">
-                                <FaImage className="text-2xl mb-2" />
-                                <span className="text-sm">{item.title}</span>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {isArabic ? 'السعر بالساعة (دولار)' : 'Hourly Rate (USD)'}
+                          </label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <FaDollarSign className="h-4 w-4 text-gray-400" />
                               </div>
-                            )}
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={profileData.hourly_rate || ''}
+                              onChange={(e) => handleInputChange('hourly_rate', parseFloat(e.target.value) || null)}
+                              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="0.00"
+                            />
                           </div>
-                        ))}
-                        
-                        <div className="portfolio-item">
-                          <div className="upload-placeholder">
-                            <FaPlus className="text-2xl mb-2" />
-                            <span className="text-sm">
-                              {isArabic ? 'إضافة عمل جديد' : 'Add new work'}
-                            </span>
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 
-                {activeSection === 'availability' && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'أوقات العمل' : 'Working Hours'}
+                            {isArabic ? 'متوسط وقت الاستجابة (ساعات)' : 'Average Response Time (hours)'}
                         </label>
-                        <textarea
-                          value={profileData.availability_schedule}
-                          onChange={(e) => handleInputChange('availability_schedule', e.target.value)}
+                          <input
+                            type="number"
+                            min="1"
+                            max="168"
+                            value={profileData.response_time_hours || 24}
+                            onChange={(e) => handleInputChange('response_time_hours', parseInt(e.target.value) || 24)}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل أوقات العمل' : 'Enter working hours'}
-                        ></textarea>
+                            placeholder="24"
+                          />
+                        </div>
+                      </div>
                       </div>
                       
-                      {userType === 'contractor' && (
+                    
+                   
+
+                    {/* Website and Additional Info */}
+                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {isArabic ? 'معلومات إضافية' : 'Additional Information'}
+                      </h3>
+                      
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            {isArabic ? 'معلومات التأمين' : 'Insurance Information'}
+                          {isArabic ? 'رابط الموقع الإلكتروني' : 'Website URL'}
                           </label>
-                          <textarea
-                            value={profileData.insurance_info}
-                            onChange={(e) => handleInputChange('insurance_info', e.target.value)}
+                        <input
+                          type="url"
+                          value={profileData.website || ''}
+                          onChange={(e) => handleInputChange('website', e.target.value)}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder={isArabic ? 'أدخل معلومات التأمين' : 'Enter insurance information'}
-                          ></textarea>
+                          placeholder={isArabic ? 'https://example.com' : 'https://example.com'}
+                        />
                         </div>
-                      )}
                     </div>
                   </div>
                 )}
                 
                 {activeSection === 'media' && (
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {/* Profile Picture Section */}
+                    <div className="bg-gray-50 rounded-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
                           {isArabic ? 'الصورة الشخصية' : 'Profile Picture'}
-                        </label>
+                      </h3>
+                      
+                      <div className="flex items-center space-x-6">
+                        <div className="relative">
+                          <img
+                            src={avatarPreview || profileData.profile_image || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData.name || 'User')}&background=0D8ABC&color=fff&size=128`}
+                            alt="Profile"
+                            className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg"
+                          />
+                          <label className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full cursor-pointer hover:bg-blue-700 transition-colors">
+                            <FaCamera className="h-4 w-4" />
                         <input
                           type="file"
                           accept="image/*"
                           onChange={handleAvatarChange}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              className="hidden"
                         />
+                          </label>
                       </div>
                       
-                      {userType === 'contractor' && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            {isArabic ? 'صورة التأمين' : 'Insurance Picture'}
-                          </label>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleInputChange('insurance_picture', e.target.files[0])}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
+                        <div className="flex-1">
+                          <p className="text-gray-600 mb-2">
+                            {isArabic 
+                              ? 'اختر صورة شخصية احترافية تمثلك. الصورة الجيدة تزيد من ثقة العملاء.'
+                              : 'Choose a professional profile picture that represents you. A good photo increases client trust.'
+                            }
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {isArabic 
+                              ? 'مقاس مُستحسن: 400×400 بكسل، حجم أقصى: 5 ميجابايت'
+                              : 'Recommended: 400×400 pixels, Max size: 5MB'
+                            }
+                          </p>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Portfolio Section */}
+                    <div className="bg-gray-50 rounded-lg p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {isArabic ? 'معرض الأعمال' : 'Portfolio Gallery'}
+                        </h3>
+                        <button 
+                          onClick={openPortfolioCreateModal}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                        >
+                          <FaCloudUploadAlt className="mr-2" />
+                          {isArabic ? 'إضافة عمل جديد' : 'Add New Work'}
+                        </button>
+                      </div>
+                      
+                      <p className="text-gray-600 mb-6">
+                        {isArabic 
+                          ? 'أضف صور أعمالك السابقة لتعرض خبرتك ومهاراتك للعملاء المحتملين.'
+                          : 'Add photos of your previous work to showcase your expertise and skills to potential clients.'
+                        }
+                      </p>
+
+                      {/* Portfolio Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Array.isArray(profileData.portfolio_items) ? profileData.portfolio_items.map((item, index) => (
+                          <div key={item.id || index} className="relative group bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                            {item.image ? (
+                              <img 
+                                src={item.image} 
+                                alt={item.title}
+                                className="w-full h-48 object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                                <FaImage className="text-gray-400 text-3xl" />
+                        </div>
+                            )}
+                            
+                            <div className="p-4">
+                              <h4 className="font-medium text-gray-900 truncate">{item.title}</h4>
+                              <p className="text-sm text-gray-600 mt-1 line-clamp-2">{item.description}</p>
+                              {item.completion_date && (
+                                <p className="text-xs text-gray-500 mt-2 flex items-center">
+                                  <FaCalendar className="mr-1" />
+                                  {new Date(item.completion_date).toLocaleDateString(isArabic ? 'ar-EG' : 'en-US')}
+                                </p>
                       )}
                     </div>
+                            
+                            {/* Overlay actions */}
+                            <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2">
+                              <button
+                                onClick={() => handleDeletePortfolioItem(item.id)}
+                                className="bg-red-600 text-white p-2 rounded-full hover:bg-red-700 transition-colors"
+                                title={isArabic ? 'حذف' : 'Delete'}
+                              >
+                                <FaTrash className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => openEditPortfolioModal(item)}
+                                className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition-colors"
+                                title={isArabic ? 'تعديل' : 'Edit'}
+                              >
+                                <FaEdit className="h-4 w-4" />
+                              </button>
                   </div>
-                )}
-                
-                {activeSection === 'contact' && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'العنوان' : 'Address'}
-                        </label>
-                        <textarea
-                          value={profileData.address}
-                          onChange={(e) => handleInputChange('address', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل العنوان' : 'Enter address'}
-                        ></textarea>
+                          </div>
+                        )) : null}
+                        
+                        {/* Add new item placeholder */}
+                        <button
+                          onClick={openPortfolioCreateModal} 
+                          className="border-2 border-dashed border-gray-300 rounded-lg p-4 h-48 flex flex-col items-center justify-center hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                        >
+                          <FaPlus className="text-gray-400 text-2xl mb-2" />
+                          <span className="text-gray-600 text-center">
+                            {isArabic ? 'إضافة عمل جديد' : 'Add New Work'}
+                          </span>
+                        </button>
                       </div>
                       
+                      {!Array.isArray(profileData.portfolio_items) || profileData.portfolio_items.length === 0 ? (
+                        <div className="text-center py-12">
+                          <FaImage className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                          <h4 className="text-lg font-medium text-gray-900 mb-2">
+                            {isArabic ? 'لا توجد أعمال في المعرض' : 'No portfolio items yet'}
+                          </h4>
+                          <p className="text-gray-600">
+                            {isArabic 
+                              ? 'ابدأ بإضافة صور أعمالك لجذب المزيد من العملاء'
+                              : 'Start adding photos of your work to attract more clients'
+                            }
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {/* Certificate Upload Section */}
+                    <div className="bg-gray-50 rounded-lg p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                        {isArabic ? 'الشهادات والتراخيص' : 'Certificates & Licenses'}
+                      </h3>
+                      
+                      <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'المدينة' : 'City'}
+                            {isArabic ? 'صورة الترخيص' : 'License Certificate'}
                         </label>
                         <input
-                          type="text"
-                          value={profileData.city}
-                          onChange={(e) => handleInputChange('city', e.target.value)}
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => handleInputChange('license_certificate', e.target.files[0])}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل المدينة' : 'Enter city'}
                         />
                       </div>
                       
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'الولاية' : 'State'}
+                            {isArabic ? 'صورة التأمين' : 'Insurance Certificate'}
                         </label>
                         <input
-                          type="text"
-                          value={profileData.state}
-                          onChange={(e) => handleInputChange('state', e.target.value)}
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => handleInputChange('insurance_certificate', e.target.files[0])}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل الولاية' : 'Enter state'}
                         />
                       </div>
                       
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'رمز البريد' : 'Zip Code'}
+                            {isArabic ? 'شهادات أخرى' : 'Other Certificates'}
                         </label>
                         <input
-                          type="text"
-                          value={profileData.zip_code}
-                          onChange={(e) => handleInputChange('zip_code', e.target.value)}
+                            type="file"
+                            accept="image/*,application/pdf"
+                            multiple
+                            onChange={(e) => setCertificateFiles(Array.from(e.target.files))}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل رمز البريد' : 'Enter zip code'}
-                        />
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {isArabic 
+                              ? 'يمكنك إضافة عدة شهادات (مثل شهادات الكفاءة، التدريب، إلخ)'
+                              : 'You can add multiple certificates (competency, training, etc.)'
+                            }
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
                 
-                {activeSection === 'social' && (
+                
+                
+                {activeSection === 'address' && (
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'روابط الموقع الإلكتروني' : 'Website'}
-                        </label>
-                        <input
-                          type="text"
-                          value={profileData.website}
-                          onChange={(e) => handleInputChange('website', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل روابط الموقع الإلكتروني' : 'Enter website URL'}
+                    {/* Address Management Section */}
+                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center">
+                          <FaMapMarkerAlt className="text-blue-600 mr-3 text-xl" />
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {isArabic ? 'إدارة العناوين' : 'Address Management'}
+                          </h3>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {profileData.addresses?.length || 0} {isArabic ? 'عنوان' : 'addresses'}
+                        </span>
+                      </div>
+
+                      {/* Existing Addresses List */}
+                      {profileData.addresses && profileData.addresses.length > 0 && (
+                        <div className="mb-6">
+                          <h4 className="text-md font-medium text-gray-800 mb-4">
+                            {isArabic ? 'العناوين المحفوظة' : 'Saved Addresses'}
+                          </h4>
+                          <div className="space-y-3">
+                            {profileData.addresses.map((address) => (
+                              <div
+                                key={address.id}
+                                className={`p-4 border rounded-lg transition-colors ${
+                                  address.is_primary 
+                                    ? 'border-blue-500 bg-blue-50' 
+                                    : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center mb-2">
+                                      <FaMapMarkerAlt className={`mr-2 ${address.is_primary ? 'text-blue-600' : 'text-gray-500'}`} />
+                                      <span className="font-medium text-gray-900">
+                                        {address.street_address}
+                                      </span>
+                                      {address.is_primary && (
+                                        <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                          {isArabic ? 'أساسي' : 'Primary'}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-600">
+                                      {[address.city, address.state, address.zip_code, address.country]
+                                        .filter(Boolean)
+                                        .join(', ')}
+                                    </p>
+                                    {address.latitude && address.longitude && (
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        {isArabic ? 'الإحداثيات:' : 'Coordinates:'} {' '}
+                                        {parseFloat(address.latitude).toFixed(4)}, {parseFloat(address.longitude).toFixed(4)}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center space-x-2 ml-4">
+                                    {!address.is_primary && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSetPrimaryAddress(address.id)}
+                                        disabled={isSaving}
+                                        className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
+                                        title={isArabic ? 'جعل أساسي' : 'Set as primary'}
+                                      >
+                                        {isArabic ? 'جعل أساسي' : 'Set Primary'}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        // TODO: Implement edit functionality
+                                        console.log('Edit address:', address.id);
+                                      }}
+                                      className="text-gray-600 hover:text-gray-800 p-1"
+                                      title={isArabic ? 'تعديل' : 'Edit'}
+                                    >
+                                      <FaEdit />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddressDelete(address.id)}
+                                      disabled={isSaving}
+                                      className="text-red-600 hover:text-red-800 p-1 disabled:opacity-50"
+                                      title={isArabic ? 'حذف' : 'Delete'}
+                                    >
+                                      <FaTrash />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Add New Address Section */}
+                      <div className="border-t border-gray-200 pt-6">
+                        <h4 className="text-md font-medium text-gray-800 mb-4">
+                          {isArabic ? 'إضافة عنوان جديد' : 'Add New Address'}
+                        </h4>
+                        <AddressPicker
+                          onAddressChange={(addressData) => {
+                            // Just store the address data, don't create immediately
+                            console.log('📝 Address data updated:', addressData);
+                            // You can store in a separate state if needed for preview
+                          }}
+                          label={isArabic ? 'عنوان العمل الجديد' : 'New Business Address'}
+                          required={false}
+                          showMap={true}
+                          createAddressCallback={async (addressData) => {
+                            // This will be called when user clicks "Save Address" in AddressPicker
+                            await handleAddressCreate({
+                              ...addressData,
+                              is_primary: !profileData.addresses || profileData.addresses.length === 0
+                            });
+                          }}
                         />
                       </div>
                       
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'روابط التويتر' : 'Twitter'}
-                        </label>
-                        <input
-                          type="text"
-                          value={profileData.social_links.twitter}
-                          onChange={(e) => handleInputChange('social_links.twitter', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل روابط التويتر' : 'Enter Twitter URL'}
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'روابط الفيسبوك' : 'Facebook'}
-                        </label>
-                        <input
-                          type="text"
-                          value={profileData.social_links.facebook}
-                          onChange={(e) => handleInputChange('social_links.facebook', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل روابط الفيسبوك' : 'Enter Facebook URL'}
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'روابط الانستغرام' : 'Instagram'}
-                        </label>
-                        <input
-                          type="text"
-                          value={profileData.social_links.instagram}
-                          onChange={(e) => handleInputChange('social_links.instagram', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder={isArabic ? 'أدخل روابط الانستغرام' : 'Enter Instagram URL'}
-                        />
+                      {/* Address Instructions */}
+                      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-start">
+                          <FaMapMarkerAlt className="text-blue-600 mr-3 mt-1" />
+                          <div className="text-sm text-blue-800">
+                            <p className="font-medium mb-1">
+                              {isArabic ? 'نصائح لإدارة العناوين:' : 'Address Management Tips:'}
+                            </p>
+                            <ul className="list-disc list-inside space-y-1 text-blue-700">
+                              <li>
+                                {isArabic 
+                                  ? 'يمكنك إضافة عدة عناوين لأعمالك المختلفة'
+                                  : 'You can add multiple addresses for different business locations'
+                                }
+                              </li>
+                              <li>
+                                {isArabic 
+                                  ? 'العنوان الأساسي سيظهر في ملفك المهني'
+                                  : 'Primary address will be displayed on your professional profile'
+                                }
+                              </li>
+                              <li>
+                                {isArabic 
+                                  ? 'استخدم الخريطة لتحديد موقعك بدقة'
+                                  : 'Use the map to pinpoint your exact location'
+                                }
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
                 
-                {activeSection === 'privacy' && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'الخصوصية' : 'Privacy'}
-                        </label>
-                        <select
-                          value={profileData.profile_visibility}
-                          onChange={(e) => handleInputChange('profile_visibility', e.target.value)}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="public">Public</option>
-                          <option value="private">Private</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'إظهار البريد الإلكتروني' : 'Show Email'}
-                        </label>
-                        <select
-                          value={profileData.show_email ? 'yes' : 'no'}
-                          onChange={(e) => handleInputChange('show_email', e.target.value === 'yes')}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'إظهار رقم الهاتف' : 'Show Phone'}
-                        </label>
-                        <select
-                          value={profileData.show_phone ? 'yes' : 'no'}
-                          onChange={(e) => handleInputChange('show_phone', e.target.value === 'yes')}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {isArabic ? 'إظهار العنوان' : 'Show Address'}
-                        </label>
-                        <select
-                          value={profileData.show_address ? 'yes' : 'no'}
-                          onChange={(e) => handleInputChange('show_address', e.target.value === 'yes')}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
+               
+                
+                
               </div>
               
               {/* Save Button */}
@@ -1589,6 +2329,229 @@ const ProProfileEditPage = () => {
           </motion.div>
         </div>
       </div>
+
+      {/* Portfolio Edit Modal */}
+      <AnimatePresence>
+        {editingPortfolioItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={cancelEditPortfolio}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {isArabic ? 'تعديل عنصر المعرض' : 'Edit Portfolio Item'}
+              </h3>
+              
+              {editingPortfolioItem.image && (
+                <div className="mb-4">
+                  <img 
+                    src={editingPortfolioItem.image} 
+                    alt={editingPortfolioItem.title}
+                    className="w-full h-32 object-cover rounded-lg"
+                  />
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'العنوان' : 'Title'}
+                        </label>
+                        <input
+                          type="text"
+                    value={portfolioEditTitle}
+                    onChange={(e) => setPortfolioEditTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder={isArabic ? 'أدخل عنوان العمل' : 'Enter work title'}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'الوصف' : 'Description'}
+                        </label>
+                  <textarea
+                    value={portfolioEditDescription}
+                    onChange={(e) => setPortfolioEditDescription(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical"
+                    placeholder={isArabic ? 'اكتب وصف للعمل' : 'Write work description'}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'تاريخ إنجاز العمل' : 'Completion Date'}
+                        </label>
+                        <input
+                    type="date"
+                    value={portfolioEditCompletionDate}
+                    onChange={(e) => setPortfolioEditCompletionDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {isArabic ? 'اختياري - متى تم إنجاز هذا العمل؟' : 'Optional - When was this work completed?'}
+                  </p>
+                      </div>
+                    </div>
+              
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  onClick={cancelEditPortfolio}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                  disabled={isSaving}
+                >
+                  {isArabic ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  onClick={savePortfolioEdit}
+                  disabled={isSaving || !portfolioEditTitle.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                >
+                  {isSaving ? (
+                    <>
+                      <FaSpinner className="animate-spin mr-2" />
+                      {isArabic ? 'جاري الحفظ...' : 'Saving...'}
+                    </>
+                  ) : (
+                    <>
+                      <FaSave className="mr-2" />
+                      {isArabic ? 'حفظ' : 'Save'}
+                    </>
+                  )}
+                </button>
+                  </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Portfolio Create Modal */}
+      <AnimatePresence>
+        {showPortfolioCreateModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={cancelPortfolioCreate}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {isArabic ? 'إضافة عمل جديد للمعرض' : 'Add New Portfolio Item'}
+              </h3>
+              
+              <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'العنوان *' : 'Title *'}
+                        </label>
+                  <input
+                    type="text"
+                    value={portfolioCreateTitle}
+                    onChange={(e) => setPortfolioCreateTitle(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder={isArabic ? 'أدخل عنوان العمل' : 'Enter work title'}
+                    required
+                  />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'الوصف' : 'Description'}
+                        </label>
+                  <textarea
+                    value={portfolioCreateDescription}
+                    onChange={(e) => setPortfolioCreateDescription(e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-vertical"
+                    placeholder={isArabic ? 'اكتب وصف للعمل' : 'Write work description'}
+                  />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'تاريخ إنجاز العمل' : 'Completion Date'}
+                        </label>
+                  <input
+                    type="date"
+                    value={portfolioCreateCompletionDate}
+                    onChange={(e) => setPortfolioCreateCompletionDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {isArabic ? 'اختياري - متى تم إنجاز هذا العمل؟' : 'Optional - When was this work completed?'}
+                  </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {isArabic ? 'الصور *' : 'Images *'}
+                        </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => handlePortfolioCreateFiles(e.target.files)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {isArabic ? 'اختر صور العمل (يمكن اختيار عدة صور)' : 'Select work images (multiple images allowed)'}
+                  </p>
+                  {portfolioCreateFiles.length > 0 && (
+                    <p className="text-sm text-green-600 mt-1">
+                      {isArabic ? `تم اختيار ${portfolioCreateFiles.length} صورة` : `${portfolioCreateFiles.length} images selected`}
+                    </p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                  onClick={cancelPortfolioCreate}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    disabled={isSaving}
+                >
+                  {isArabic ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  onClick={savePortfolioCreate}
+                  disabled={isSaving || !portfolioCreateTitle.trim() || portfolioCreateFiles.length === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                  >
+                    {isSaving ? (
+                      <>
+                        <FaSpinner className="animate-spin mr-2" />
+                      {isArabic ? 'جاري الإضافة...' : 'Adding...'}
+                      </>
+                    ) : (
+                      <>
+                      <FaPlus className="mr-2" />
+                      {isArabic ? 'إضافة' : 'Add'}
+                      </>
+                    )}
+                  </button>
+            </div>
+          </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

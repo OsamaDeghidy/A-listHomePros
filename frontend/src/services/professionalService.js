@@ -184,6 +184,20 @@ class ProfessionalService {
     }
   }
 
+  /**
+   * رفض عرض سعر (للعملاء)
+   * Reject service quote (for clients)
+   */
+  async rejectServiceQuote(quoteId, rejectionData = {}) {
+    try {
+      const response = await api.post(`/alistpros-profiles/quotes/${quoteId}/reject/`, rejectionData);
+      return response;
+    } catch (error) {
+      console.error('Error rejecting service quote:', error);
+      throw error;
+    }
+  }
+
   // ================== Job Assignments ==================
 
   /**

@@ -24,6 +24,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q, Avg, Count
 from datetime import timedelta
 from rest_framework.views import APIView
+import requests
 
 User = get_user_model()
 
@@ -45,10 +46,145 @@ class AListHomeProProfileViewSet(viewsets.ModelViewSet):
     serializer_class = AListHomeProProfileSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_class = AListHomeProFilter
-    search_fields = ['business_name', 'business_description', 'user__name', 'service_categories__name']
-    ordering_fields = ['business_name', 'years_of_experience', 'created_at']
+    filterset_fields = ['user__role', 'years_of_experience', 'is_onboarded']
+    search_fields = ['business_name', 'business_description', 'user__name']
+    ordering_fields = ['business_name', 'years_of_experience', 'created_at', 'average_rating']
     ordering = ['business_name']
+
+    def get_queryset(self):
+        # Handle swagger fake view
+        if getattr(self, 'swagger_fake_view', False):
+            return AListHomeProProfile.objects.none()
+        
+        # For list/retrieve operations, return all profiles (readable by everyone)
+        if self.action in ['list', 'retrieve']:
+            return AListHomeProProfile.objects.select_related('user').prefetch_related('service_categories')
+        
+        # For update/create/delete operations, filter by current user
+        if not self.request.user.is_authenticated:
+            return AListHomeProProfile.objects.none()
+        
+        return AListHomeProProfile.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        # Check if profile already exists for this user
+        existing_profile = AListHomeProProfile.objects.filter(user=self.request.user).first()
+        if existing_profile:
+            # Update existing profile instead of creating new one
+            for key, value in serializer.validated_data.items():
+                setattr(existing_profile, key, value)
+            existing_profile.save()
+            serializer.instance = existing_profile
+        else:
+            # Create new profile
+            serializer.save(user=self.request.user)
+
+    def get_object(self):
+        """Get or create profile for the current user in update operations"""
+        if self.action in ['update_address']:
+            try:
+                profile = AListHomeProProfile.objects.get(user=self.request.user)
+                return profile
+            except AListHomeProProfile.DoesNotExist:
+                # Create new profile if doesn't exist
+                return AListHomeProProfile.objects.create(user=self.request.user)
+        else:
+            # For other operations, use default behavior
+            return super().get_object()
+
+    @action(detail=False, methods=['post'])
+    def update_address(self, request):
+        """Update professional address with automatic geocoding"""
+        try:
+            profile = self.get_object()
+            address_data = request.data.get('address', {})
+            
+            # Get or create address for this professional
+            from core.models import Address
+            address, created = Address.objects.get_or_create(
+                user=request.user,
+                is_primary=True,
+                defaults={
+                    'street_address': address_data.get('street_address', ''),
+                    'city': address_data.get('city', ''),
+                    'state': address_data.get('state', ''),
+                    'zip_code': address_data.get('zip_code', ''),
+                    'country': address_data.get('country', 'Egypt'),
+                    'latitude': address_data.get('latitude'),
+                    'longitude': address_data.get('longitude')
+                }
+            )
+            
+            if not created:
+                # Update existing address
+                address.street_address = address_data.get('street_address', address.street_address)
+                address.city = address_data.get('city', address.city)
+                address.state = address_data.get('state', address.state)
+                address.zip_code = address_data.get('zip_code', address.zip_code)
+                address.country = address_data.get('country', address.country)
+                address.latitude = address_data.get('latitude')
+                address.longitude = address_data.get('longitude')
+            
+            # If no coordinates provided, try to geocode
+            if not address.latitude or not address.longitude:
+                address_parts = [
+                    address.street_address,
+                    address.city,
+                    address.state,
+                    address.country
+                ]
+                address_string = ', '.join(filter(None, address_parts))
+                
+                if address_string:
+                    try:
+                        encoded_address = requests.utils.quote(address_string)
+                        response = requests.get(
+                            f'https://nominatim.openstreetmap.org/search?format=json&q={encoded_address}&limit=1&addressdetails=1',
+                            headers={'User-Agent': 'AListHomePros/1.0'},
+                            timeout=10
+                        )
+                        
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data:
+                                result = data[0]
+                                address.latitude = float(result['lat'])
+                                address.longitude = float(result['lon'])
+                    except Exception as geocode_error:
+                        print(f"Geocoding error: {geocode_error}")
+            
+            address.save()
+            
+            # Update profile with direct coordinates if needed
+            if address.latitude and address.longitude:
+                profile.latitude = address.latitude
+                profile.longitude = address.longitude
+                profile.save()
+            
+            # Serialize the updated profile
+            serializer = self.get_serializer(profile)
+            return Response({
+                'message': 'Address updated successfully',
+                'profile': serializer.data,
+                'geocoded': bool(address.latitude and address.longitude)
+            })
+            
+        except Exception as e:
+            return Response({
+                'error': f'Failed to update address: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        """Get current user's profile"""
+        try:
+            profile = AListHomeProProfile.objects.get(user=request.user)
+            serializer = self.get_serializer(profile)
+            return Response(serializer.data)
+        except AListHomeProProfile.DoesNotExist:
+            return Response({
+                'error': 'Profile not found'
+            }, status=status.HTTP_404_NOT_FOUND)
 
 
 class AListHomeProProfileDetailView(generics.RetrieveAPIView):
@@ -101,7 +237,23 @@ class AListHomeProPortfolioListCreateView(generics.ListCreateAPIView):
             return AListHomeProPortfolio.objects.none()
     
     def perform_create(self, serializer):
-        alistpro_profile = get_object_or_404(AListHomeProProfile, user=self.request.user)
+        try:
+            alistpro_profile = AListHomeProProfile.objects.get(user=self.request.user)
+        except AListHomeProProfile.DoesNotExist:
+            # Create a basic profile if it doesn't exist
+            alistpro_profile = AListHomeProProfile.objects.create(
+                user=self.request.user,
+                business_name=self.request.user.name or f"{self.request.user.email}'s Business",
+                business_description="Professional service provider",
+                years_of_experience=0,
+                service_radius=50,
+                is_onboarded=True
+            )
+        
+        # Debug logging
+        print(f"Creating portfolio for user: {self.request.user.id}, profile: {alistpro_profile.id}")
+        print(f"Request data: {self.request.data}")
+        
         serializer.save(alistpro=alistpro_profile)
 
 
@@ -296,6 +448,9 @@ class ServiceRequestListCreateView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return ServiceRequest.objects.none()
         
         if user.role == 'client':
             # Clients see their own requests
@@ -319,6 +474,10 @@ class ServiceRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return ServiceRequest.objects.none()
+        
         if user.role == 'client':
             return ServiceRequest.objects.filter(client=user)
         else:
@@ -356,6 +515,10 @@ class ServiceQuoteDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return ServiceQuote.objects.none()
+        
         return ServiceQuote.objects.filter(
             Q(professional=user) | Q(service_request__client=user)
         )
@@ -411,6 +574,29 @@ def accept_quote(request, quote_id):
     }, status=status.HTTP_200_OK)
 
 
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def reject_quote(request, quote_id):
+    """Reject a service quote"""
+    try:
+        quote = ServiceQuote.objects.get(
+            id=quote_id,
+            service_request__client=request.user,
+            status='pending'
+        )
+    except ServiceQuote.DoesNotExist:
+        return Response({'error': 'Quote not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Update quote status
+    quote.status = 'rejected'
+    quote.rejection_reason = request.data.get('reason', '')
+    quote.save()
+    
+    return Response({
+        'message': 'Quote rejected successfully'
+    }, status=status.HTTP_200_OK)
+
+
 class JobAssignmentListView(generics.ListAPIView):
     """List job assignments"""
     serializer_class = JobAssignmentSerializer
@@ -432,6 +618,10 @@ class JobAssignmentDetailView(generics.RetrieveUpdateAPIView):
     
     def get_queryset(self):
         user = self.request.user
+        # Handle Swagger schema generation
+        if getattr(self, 'swagger_fake_view', False):
+            return JobAssignment.objects.none()
+        
         return JobAssignment.objects.filter(
             Q(professional=user) | Q(client=user)
         )

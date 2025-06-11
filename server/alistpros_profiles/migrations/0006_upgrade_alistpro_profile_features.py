@@ -8,7 +8,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0002_initial'),
+        ('core', '0001_initial'),
         ('alistpros_profiles', '0005_alter_review_client'),
     ]
 

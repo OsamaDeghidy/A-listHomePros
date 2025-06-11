@@ -17,6 +17,12 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Handle FormData by removing Content-Type header
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
     return config;
   },
   (error) => {
@@ -82,136 +88,128 @@ const authService = {
 
 // خدمات المحترفين والخدمات الجديدة
 const alistProsService = {
-  // Professional Profiles
-  getProfiles: (params) => api.get('/alistpros-profiles/professionals/', { params }),
-  getProfile: (id) => api.get(`/alistpros-profiles/professionals/${id}/`),
-  getMyProfile: () => api.get('/alistpros-profiles/my-profile/'),
-  updateMyProfile: (data) => api.put('/alistpros-profiles/my-profile/', data),
-  
-  // Service Requests
-  getServiceRequests: (params) => api.get('/alistpros-profiles/requests/', { params }),
-  createServiceRequest: (data) => api.post('/alistpros-profiles/requests/', data),
-  updateServiceRequest: (id, data) => api.put(`/alistpros-profiles/requests/${id}/`, data),
-  deleteServiceRequest: (id) => api.delete(`/alistpros-profiles/requests/${id}/`),
-  
-  // Service Quotes
-  getServiceQuotes: (params) => api.get('/alistpros-profiles/quotes/', { params }),
-  createServiceQuote: (data) => api.post('/alistpros-profiles/quotes/', data),
-  updateServiceQuote: (id, data) => api.put(`/alistpros-profiles/quotes/${id}/`, data),
-  acceptServiceQuote: (id, data) => api.post(`/alistpros-profiles/quotes/${id}/accept/`, data),
-  
-  // Job Assignments  
-  getJobAssignments: (params) => api.get('/alistpros-profiles/jobs/', { params }),
-  updateJobAssignment: (id, data) => api.put(`/alistpros-profiles/jobs/${id}/`, data),
-  
-  // Availability Management
-  getAvailability: (params) => api.get('/alistpros-profiles/availability/', { params }),
-  addAvailability: (data) => api.post('/alistpros-profiles/availability/', data),
-  updateAvailability: (id, data) => api.put(`/alistpros-profiles/availability/${id}/`, data),
-  deleteAvailability: (id) => api.delete(`/alistpros-profiles/availability/${id}/`),
-  
-  // Time Off Management
-  getTimeOff: (params) => api.get('/alistpros-profiles/time-off/', { params }),
-  addTimeOff: (data) => api.post('/alistpros-profiles/time-off/', data),
-  deleteTimeOff: (id) => api.delete(`/alistpros-profiles/time-off/${id}/`),
-  
-  // Reviews
-  getReviews: (professionalId = null) => {
-    const url = professionalId 
-      ? `/alistpros-profiles/professionals/${professionalId}/reviews/`
-      : '/alistpros-profiles/reviews/';
-    return api.get(url);
-  },
-  createReview: (professionalId, data) => api.post(`/alistpros-profiles/professionals/${professionalId}/reviews/`, data),
-  respondToReview: (reviewId, data) => api.post(`/alistpros-profiles/reviews/${reviewId}/respond/`, data),
-  
-  // Dashboard Data
-  getProfessionalDashboard: () => api.get('/alistpros-profiles/dashboard/professional/'),
-  getClientDashboard: () => api.get('/alistpros-profiles/dashboard/client/'),
-  
-  // Categories
-  getCategories: () => api.get('/alistpros-profiles/categories/'),
-  getPendingProfiles: () => api.get('/alistpros-profiles/admin/pending/'),
-  
-  // الملفات الشخصية
-  getProfile: async (id) => {
-    console.log('🔍 Getting profile for:', id);
-    
-    if (id === 'me') {
-      // Try multiple approaches to get current user's profile
-      try {
-        // First try: get profile list and find current user's profile
-        console.log('📡 Trying profiles list...');
-        const profilesResponse = await api.get('/alistpros/profiles/');
-        const profiles = profilesResponse.data.results || profilesResponse.data;
-        console.log('📋 Found profiles:', profiles);
-        
-        if (profiles && profiles.length > 0) {
-          // For now, assume first profile belongs to current user
-          // In a real scenario, you'd filter by user ID
-          const userProfile = profiles[0];
-          console.log('✅ Using profile:', userProfile);
-          return { data: userProfile };
+  getAllProfiles: (params) => api.get('/alistpros/profiles/', { params }),
+  getProfile: (id) => api.get(`/alistpros/profiles/${id}/`),
+  getMyProfile: () => api.get('/alistpros/profiles/me/'),
+  updateMyProfile: async (data) => {
+    try {
+      // First, try to get current user's profile using the 'me' endpoint
+      const profileResponse = await api.get('/alistpros/profiles/me/');
+      const currentProfile = profileResponse.data;
+      
+      if (currentProfile && currentProfile.id) {
+        // Update the existing profile
+        // Check if data is FormData to remove Content-Type header (let browser set it)
+        const config = {};
+        if (data instanceof FormData) {
+          config.headers = {};
+          // Don't set Content-Type for FormData - let browser handle it
         }
-        
-        // If no profiles found, fall back to user profile endpoint
-        console.log('📡 No alistpro profiles found, trying user profile...');
-        return await api.get('/users/profile/');
-      } catch (err) {
-        console.log('❌ Profiles list failed, trying user profile...', err.response?.status);
-        // Fallback to user profile endpoint
-        try {
-          return await api.get('/users/profile/');
-        } catch (userErr) {
-          console.log('❌ User profile also failed:', userErr.response?.status);
-          return { data: {} };
+        return await api.patch(`/alistpros/profiles/${currentProfile.id}/`, data, config);
+      } else {
+        // This shouldn't happen if 'me' endpoint works, but fallback to create
+        const config = {};
+        if (data instanceof FormData) {
+          config.headers = {};
+          // Don't set Content-Type for FormData - let browser handle it
         }
+        return await api.post('/alistpros/profiles/', data, config);
       }
-    } else {
-      return api.get(`/alistpros/profiles/${id}/`);
+    } catch (error) {
+      if (error.response?.status === 404) {
+        // Profile doesn't exist, create new one
+        const config = {};
+        if (data instanceof FormData) {
+          config.headers = {};
+          // Don't set Content-Type for FormData - let browser handle it
+        }
+        return await api.post('/alistpros/profiles/', data, config);
+      }
+      throw error;
     }
   },
+  createProfile: (data) => api.post('/alistpros/profiles/', data),
+  deleteProfile: (id) => api.delete(`/alistpros/profiles/${id}/`),
+  updateAddress: (data) => api.post('/alistpros/profiles/update_address/', data),
+  
+  // Service Categories
+  getServiceCategories: () => api.get('/alistpros/service-categories/'),
+  
+  // Portfolio
+  getPortfolio: (params) => api.get('/alistpros/portfolio/', { params }),
+  createPortfolio: (data) => {
+    const config = {};
+    if (data instanceof FormData) {
+      config.headers = {
+        'Content-Type': 'multipart/form-data',
+      };
+    }
+    return api.post('/alistpros/portfolio/', data, config);
+  },
+  updatePortfolio: (id, data) => {
+    const config = {};
+    if (data instanceof FormData) {
+      config.headers = {
+        'Content-Type': 'multipart/form-data',
+      };
+    }
+    return api.put(`/alistpros/portfolio/${id}/`, data, config);
+  },
+  deletePortfolio: (id) => api.delete(`/alistpros/portfolio/${id}/`),
+  getPortfolioItem: (id) => api.get(`/alistpros/portfolio/${id}/`),
+  
+  // Reviews
+  getReviews: (params) => api.get('/alistpros/reviews/', { params }),
+  createReview: (data) => api.post('/alistpros/reviews/', data),
+  replyToReview: (id, data) => api.post(`/alistpros/reviews/${id}/reply_to_review/`, data),
+  
+  // Service requests
+  getServiceRequests: (params) => api.get('/alistpros/requests/', { params }),
+  createServiceRequest: (data) => api.post('/alistpros/requests/', data),
+  updateServiceRequest: (id, data) => api.patch(`/alistpros/requests/${id}/`, data),
+  deleteServiceRequest: (id) => api.delete(`/alistpros/requests/${id}/`),
+  
+  // Service quotes  
+  getServiceQuotes: (params) => api.get('/alistpros/quotes/', { params }),
+  createServiceQuote: (data) => api.post('/alistpros/quotes/', data),
+  updateServiceQuote: (id, data) => api.patch(`/alistpros/quotes/${id}/`, data),
+  deleteServiceQuote: (id) => api.delete(`/alistpros/quotes/${id}/`),
+  acceptQuote: (id) => api.post(`/alistpros/quotes/${id}/accept/`),
+  acceptServiceQuote: (id) => api.post(`/alistpros/quotes/${id}/accept/`),
+  rejectServiceQuote: (id) => api.post(`/alistpros/quotes/${id}/reject/`),
+  
+  // Job assignments
+  getJobAssignments: (params) => api.get('/alistpros/jobs/', { params }),
+  updateJobAssignment: (id, data) => api.patch(`/alistpros/jobs/${id}/`, data),
+  
+  // Dashboard
+  getClientDashboard: () => api.get('/alistpros/client-dashboard/'),
+  
+  // Categories
+  getCategories: () => api.get('/alistpros/categories/'),
+  getPendingProfiles: () => api.get('/alistpros/admin/pending/'),
+  
+  // الملفات الشخصية
   getProfileDetail: (id) => api.get(`/alistpros/profile-detail/${id}/`),
-  createProfile: (data) => api.post('/alistpros/profiles/create/', data),
   updateProfile: async (profileId, data) => {
-    // Try multiple endpoints to handle different scenarios
-    console.log('🔄 Attempting profile update with data:', data);
-    
+    // Use the correct endpoint with profile ID
     try {
-      // First try: custom update endpoint
-      console.log('📡 Trying: /alistpros/profiles/update/');
-      return await api.patch('/alistpros/profiles/update/', data);
-    } catch (error) {
-      console.log('❌ Custom endpoint failed:', error.response?.status);
-      
-      // Second try: Get profile ID and use ViewSet endpoint
-      try {
-        console.log('📡 Trying to get profile list first...');
-        const profilesResponse = await api.get('/alistpros/profiles/');
-        const profiles = profilesResponse.data.results || profilesResponse.data;
-        
-        if (profiles && profiles.length > 0) {
-          const userProfile = profiles[0]; // Assume first profile belongs to current user
-          console.log('📡 Found profile, trying ViewSet update:', userProfile.id);
-          return await api.patch(`/alistpros/profiles/${userProfile.id}/`, data);
+      if (profileId) {
+        return await api.patch(`/alistpros/profiles/${profileId}/`, data);
+      } else {
+        // If no profile ID, get current user's profile first
+        const response = await api.get('/alistpros/profiles/');
+        const profiles = response.data.results || response.data;
+        const currentProfile = Array.isArray(profiles) ? profiles[0] : profiles;
+        if (currentProfile && currentProfile.id) {
+          return await api.patch(`/alistpros/profiles/${currentProfile.id}/`, data);
+        } else {
+          return await api.post('/alistpros/profiles/', data);
         }
-      } catch (listError) {
-        console.log('❌ Profile list failed:', listError.response?.status);
       }
-      
-      // Third try: Create new profile if none exists
-      try {
-        console.log('📡 Trying to create new profile...');
-        const createData = {
-          business_name: 'Professional Service Provider',
-          business_description: 'Professional service provider',
-          ...data
-        };
-        return await api.post('/alistpros/profiles/create/', createData);
-      } catch (createError) {
-        console.log('❌ Create profile failed:', createError.response?.status);
-        throw error; // Throw original error
-      }
+    } catch (err) {
+      console.error('Profile update failed:', err);
+      throw err;
     }
   },
   updateProfilePartial: async (profileId, data) => {
@@ -219,12 +217,8 @@ const alistProsService = {
     return alistProsService.updateProfile(profileId, data);
   },
   
-  // معرض الأعمال
-  getPortfolio: () => api.get('/alistpros/portfolio/'),
-  getPortfolioItem: (id) => api.get(`/alistpros/portfolio/${id}/`),
-  createPortfolioItem: (data) => api.post('/alistpros/portfolio/', data),
-  updatePortfolioItem: (id, data) => api.put(`/alistpros/portfolio/${id}/`, data),
-  deletePortfolioItem: (id) => api.delete(`/alistpros/portfolio/${id}/`),
+  // البحث والقوائم
+  getProfiles: (params) => api.get('/alistpros/profiles/', { params }),
   
   // المراجعات
   getReviews: (alistproId) => {
@@ -238,29 +232,88 @@ const alistProsService = {
   getServices: () => api.get('/alistpros/services/'),
 };
 
-// خدمات الرسائل والإشعارات
+// خدمات الرسائل والإشعارات المحدثة
 const messagingService = {
-  // المحادثات
+  // المحادثات - Conversations
   getConversations: () => api.get('/messaging/conversations/'),
   getConversation: (id) => api.get(`/messaging/conversations/${id}/`),
   createConversation: (data) => api.post('/messaging/conversations/', data),
   updateConversation: (id, data) => api.put(`/messaging/conversations/${id}/`, data),
   deleteConversation: (id) => api.delete(`/messaging/conversations/${id}/`),
   markConversationAsRead: (id) => api.post(`/messaging/conversations/${id}/mark_read/`),
+  archiveConversation: (id) => api.post(`/messaging/conversations/${id}/archive/`),
+  searchConversations: (query) => api.get('/messaging/conversations/search/', { params: { q: query } }),
   
-  // الرسائل
-  getMessages: (conversationId) => api.get(`/messaging/conversations/${conversationId}/messages/`),
-  getMessage: (id) => api.get(`/messaging/messages/${id}/`),
-  sendMessage: (conversationId, data) => api.post(`/messaging/conversations/${conversationId}/messages/`, data),
-  updateMessage: (conversationId, messageId, data) => api.put(`/messaging/conversations/${conversationId}/messages/${messageId}/`, data),
-  deleteMessage: (conversationId, messageId) => api.delete(`/messaging/conversations/${conversationId}/messages/${messageId}/`),
+  // إدارة المشاركين - Participants Management
+  addParticipant: (conversationId, userId) => api.post(`/messaging/conversations/${conversationId}/add_participant/`, { user_id: userId }),
+  removeParticipant: (conversationId, userId) => api.post(`/messaging/conversations/${conversationId}/remove_participant/`, { user_id: userId }),
+  
+  // الرسائل - Messages
+  getMessages: (conversationId, params) => api.get(`/messaging/conversations/${conversationId}/messages/`, { params }),
+  getMessage: (conversationId, messageId) => api.get(`/messaging/conversations/${conversationId}/messages/${messageId}/`),
+  sendMessage: (conversationId, data) => {
+    // Support for different message types (text, image, file, location)
+    const config = {};
+    if (data instanceof FormData) {
+      // Let browser set Content-Type for FormData
+      config.headers = {};
+    }
+    return api.post(`/messaging/conversations/${conversationId}/messages/`, data, config);
+  },
+  editMessage: (conversationId, messageId, content) => api.patch(`/messaging/conversations/${conversationId}/messages/${messageId}/edit/`, { content }),
+  deleteMessage: (conversationId, messageId) => api.delete(`/messaging/conversations/${conversationId}/messages/${messageId}/soft_delete/`),
   markMessageAsRead: (conversationId, messageId) => api.post(`/messaging/conversations/${conversationId}/messages/${messageId}/mark_read/`),
   
-  // الإشعارات
+  // التفاعلات - Reactions
+  addReaction: (conversationId, messageId, reactionType) => api.post(`/messaging/conversations/${conversationId}/messages/${messageId}/react/`, { reaction_type: reactionType }),
+  removeReaction: (conversationId, messageId) => api.delete(`/messaging/conversations/${conversationId}/messages/${messageId}/remove_reaction/`),
+  
+  // الإشعارات - Notifications
   getNotifications: () => api.get('/messaging/notifications/'),
-  getNotification: (id) => api.get(`/messaging/notifications/${id}/`),
+  getUnreadCount: () => api.get('/messaging/notifications/unread_count/'),
   markAllNotificationsAsRead: () => api.post('/messaging/notifications/mark_all_read/'),
-  markNotificationAsRead: (id) => api.post(`/messaging/notifications/${id}/mark_read/`),
+  markNotificationAsRead: (id) => api.patch(`/messaging/notifications/${id}/`, { read: true }),
+  deleteNotification: (id) => api.delete(`/messaging/notifications/${id}/`),
+  
+  // البحث عن المستخدمين - User Search
+  searchUsers: (query) => api.get('/messaging/users/search/', { params: { q: query } }),
+  
+  // إنشاء رسالة مع مرفقات - Create message with attachments
+  sendMessageWithAttachment: (conversationId, data) => {
+    const formData = new FormData();
+    formData.append('content', data.content || '');
+    formData.append('message_type', data.messageType || 'TEXT');
+    
+    if (data.file) {
+      formData.append('file', data.file);
+      formData.append('file_name', data.file.name);
+    }
+    
+    if (data.image) {
+      formData.append('image', data.image);
+      formData.append('message_type', 'IMAGE');
+    }
+    
+    if (data.location) {
+      formData.append('latitude', data.location.lat);
+      formData.append('longitude', data.location.lng);
+      formData.append('location_name', data.location.name || '');
+      formData.append('message_type', 'LOCATION');
+    }
+    
+    if (data.replyTo) {
+      formData.append('reply_to', data.replyTo);
+    }
+    
+    return api.post(`/messaging/conversations/${conversationId}/messages/`, formData);
+  },
+  
+  // دعم WebSocket للرسائل الفورية
+  getWebSocketUrl: () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = process.env.REACT_APP_API_URL?.replace(/^https?:\/\//, '') || window.location.host;
+    return `${protocol}//${host}/ws/messaging/`;
+  },
 };
 
 // خدمات إدارة المواعيد والحجوزات
@@ -366,6 +419,7 @@ const proService = {
   
   // البحث عن المحترفين
   searchPros: (params) => api.get('/alistpros/profiles/', { params }),
+  getProfiles: (params) => api.get('/alistpros/profiles/', { params }),
   // معلومات الملف الشخصي للمحترف
   getProfile: (id) => alistProsService.getProfile(id),
   getProfileDetail: (id) => alistProsService.getProfileDetail(id),
@@ -374,9 +428,10 @@ const proService = {
   
   // معرض الأعمال
   getPortfolio: () => alistProsService.getPortfolio(),
-  createPortfolioItem: (data) => alistProsService.createPortfolioItem(data),
-  updatePortfolioItem: (id, data) => alistProsService.updatePortfolioItem(id, data),
-  deletePortfolioItem: (id) => alistProsService.deletePortfolioItem(id),
+  createPortfolioItem: (data) => alistProsService.createPortfolio(data),
+  updatePortfolioItem: (id, data) => alistProsService.updatePortfolio(id, data),
+  deletePortfolioItem: (id) => alistProsService.deletePortfolio(id),
+  getPortfolioItem: (id) => alistProsService.getPortfolioItem(id),
   
   // الفئات والخدمات
   getCategories: () => alistProsService.getCategories(),
@@ -514,6 +569,39 @@ const paymentsService = paymentService;
 // إعادة تسمية notificationService لتتوافق مع الاستدعاءات الحالية
 const notificationsService = notificationService;
 
+// خدمات العناوين (المطلوبة للماب)
+const addressService = {
+  // Get all addresses for authenticated user
+  getAddresses: (params) => api.get('/core/addresses/', { params }),
+  
+  // Get primary address
+  getPrimaryAddress: () => api.get('/core/addresses/primary/'),
+  
+  // Create new address
+  createAddress: (data) => api.post('/core/addresses/', data),
+  
+  // Create address with geocoding
+  createAddressWithGeocoding: (data) => api.post('/core/addresses/create_with_geocoding/', data),
+  
+  // Update address
+  updateAddress: (id, data) => api.put(`/core/addresses/${id}/`, data),
+  
+  // Delete address
+  deleteAddress: (id) => api.delete(`/core/addresses/${id}/`),
+  
+  // Set address as primary
+  setPrimaryAddress: (id) => api.post(`/core/addresses/${id}/set_primary/`),
+  
+  // Geocoding services
+  geocodeAddress: (address) => api.post('/core/addresses/geocode/', { address }),
+  reverseGeocode: (lat, lng) => api.post('/core/addresses/reverse_geocode/', { latitude: lat, longitude: lng }),
+  
+  // Get nearby addresses for map
+  getNearbyAddresses: (lat, lng, radius = 10) => api.get('/core/addresses/nearby/', {
+    params: { lat, lng, radius }
+  }),
+};
+
 // تصدير الواجهة الافتراضية لدعم الكود القديم
 export default api;
 
@@ -533,4 +621,5 @@ export {
   blogService,
   serviceService,
   userService,
+  addressService,
 };

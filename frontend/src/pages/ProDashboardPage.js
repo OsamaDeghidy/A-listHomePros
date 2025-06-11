@@ -321,7 +321,11 @@ const ProDashboardPage = () => {
           // Use real availability data
           availability: availabilityData,
           appointments: appointments,
-          location: profileData.location || profileData.address || (isArabic ? 'الموقع غير محدد' : 'Location not set'),
+          location: profileData.location || 
+                   (profileData.address && typeof profileData.address === 'object' 
+                     ? `${profileData.address.street_address || ''}, ${profileData.address.city || ''}, ${profileData.address.state || ''}`.replace(/^,\s*|,\s*$/g, '').replace(/,\s*,/g, ',').trim()
+                     : profileData.address) || 
+                   (isArabic ? 'الموقع غير محدد' : 'Location not set'),
           phone: profileData.phone || profileData.contact_phone || '',
           email: profileData.user?.email || currentUser?.email || '',
           joinDate: profileData.created_at || profileData.user?.date_joined || new Date().toISOString(),

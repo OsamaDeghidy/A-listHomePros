@@ -14,7 +14,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على قائمة المحادثات
    */
   getUserConversations(token) {
-    return axios.get(`${API_URL}/messages/conversations/`, {
+    return axios.get(`${API_URL}/messaging/conversations/`, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -27,7 +27,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على تفاصيل المحادثة
    */
   getConversation(token, conversationId) {
-    return axios.get(`${API_URL}/messages/conversations/${conversationId}/`, {
+    return axios.get(`${API_URL}/messaging/conversations/${conversationId}/`, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -41,7 +41,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على رسائل المحادثة
    */
   getMessages(token, conversationId, params = {}) {
-    return axios.get(`${API_URL}/messages/conversations/${conversationId}/messages/`, {
+    return axios.get(`${API_URL}/messaging/conversations/${conversationId}/messages/`, {
       headers: { Authorization: `Bearer ${token}` },
       params
     });
@@ -55,7 +55,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على المحادثة المنشأة
    */
   createConversation(token, conversationData) {
-    return axios.post(`${API_URL}/messages/conversations/`, conversationData, {
+    return axios.post(`${API_URL}/messaging/conversations/`, conversationData, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -69,7 +69,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على الرسالة المرسلة
    */
   sendMessage(token, conversationId, messageData) {
-    return axios.post(`${API_URL}/messages/conversations/${conversationId}/messages/`, messageData, {
+    return axios.post(`${API_URL}/messaging/conversations/${conversationId}/messages/`, messageData, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -78,11 +78,12 @@ class MessageService {
    * وضع علامة على رسالة كمقروءة
    * Mark a message as read
    * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
    * @param {string} messageId - معرف الرسالة (message ID)
    * @returns {Promise} وعد يحتوي على نتيجة العملية
    */
-  markMessageAsRead(token, messageId) {
-    return axios.put(`${API_URL}/messages/messages/${messageId}/read/`, {}, {
+  markMessageAsRead(token, conversationId, messageId) {
+    return axios.post(`${API_URL}/messaging/conversations/${conversationId}/messages/${messageId}/mark_read/`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -95,7 +96,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على نتيجة العملية
    */
   markConversationAsRead(token, conversationId) {
-    return axios.put(`${API_URL}/messages/conversations/${conversationId}/read/`, {}, {
+    return axios.post(`${API_URL}/messaging/conversations/${conversationId}/mark_read/`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -104,11 +105,12 @@ class MessageService {
    * حذف رسالة
    * Delete a message
    * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
    * @param {string} messageId - معرف الرسالة (message ID)
    * @returns {Promise} وعد يحتوي على نتيجة العملية
    */
-  deleteMessage(token, messageId) {
-    return axios.delete(`${API_URL}/messages/messages/${messageId}/`, {
+  deleteMessage(token, conversationId, messageId) {
+    return axios.delete(`${API_URL}/messaging/conversations/${conversationId}/messages/${messageId}/`, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -120,7 +122,7 @@ class MessageService {
    * @returns {Promise} وعد يحتوي على عدد الرسائل غير المقروءة
    */
   getUnreadMessagesCount(token) {
-    return axios.get(`${API_URL}/messages/unread-count/`, {
+    return axios.get(`${API_URL}/messaging/notifications/unread_count/`, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -141,11 +143,72 @@ class MessageService {
       formData.append('attachment', file);
     }
     
-    return axios.post(`${API_URL}/messages/conversations/${conversationId}/messages/`, formData, {
+    return axios.post(`${API_URL}/messaging/conversations/${conversationId}/messages/`, formData, {
       headers: { 
         Authorization: `Bearer ${token}`,
         'Content-Type': 'multipart/form-data'
       }
+    });
+  }
+
+  /**
+   * البحث عن المستخدمين
+   * Search for users
+   * @param {string} token - رمز المصادقة (authentication token) 
+   * @param {string} query - نص البحث (search query)
+   * @returns {Promise} وعد يحتوي على نتائج البحث
+   */
+  searchUsers(token, query) {
+    return axios.get(`${API_URL}/messaging/users/search/`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { q: query }
+    });
+  }
+
+  /**
+   * أرشفة محادثة
+   * Archive conversation
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @returns {Promise} وعد يحتوي على نتيجة العملية
+   */
+  archiveConversation(token, conversationId) {
+    return axios.post(`${API_URL}/messaging/conversations/${conversationId}/archive/`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * إضافة تفاعل على رسالة
+   * Add reaction to message
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @param {string} messageId - معرف الرسالة (message ID)
+   * @param {string} reactionType - نوع التفاعل (reaction type)
+   * @returns {Promise} وعد يحتوي على نتيجة العملية
+   */
+  addReaction(token, conversationId, messageId, reactionType) {
+    return axios.post(`${API_URL}/messaging/conversations/${conversationId}/messages/${messageId}/react/`, {
+      reaction_type: reactionType
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * تعديل رسالة
+   * Edit message
+   * @param {string} token - رمز المصادقة (authentication token)
+   * @param {string} conversationId - معرف المحادثة (conversation ID)
+   * @param {string} messageId - معرف الرسالة (message ID)
+   * @param {string} newContent - المحتوى الجديد (new content)
+   * @returns {Promise} وعد يحتوي على نتيجة العملية
+   */
+  editMessage(token, conversationId, messageId, newContent) {
+    return axios.patch(`${API_URL}/messaging/conversations/${conversationId}/messages/${messageId}/edit/`, {
+      content: newContent
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
     });
   }
 }
