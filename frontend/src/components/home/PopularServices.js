@@ -46,16 +46,13 @@ const PopularServices = () => {
           // تحديث أسماء الخدمات لتتوافق مع اللغة المختارة
           const updatedServices = response.data.results.map(service => ({
             ...service,
-            name: isArabic ? getArabicServiceName(service.name || service.id) : service.name,
-            // التأكد من وجود صورة صحيحة
-            image_url: service.image_url || getServiceImage(service.name || service.id)
+            name: isArabic ? getArabicServiceName(service.name || service.id) : service.name
           }));
           setServices(updatedServices);
         } else if (response.data && Array.isArray(response.data)) {
           const updatedServices = response.data.map(service => ({
             ...service,
-            name: isArabic ? getArabicServiceName(service.name || service.id) : service.name,
-            image_url: service.image_url || getServiceImage(service.name || service.id)
+            name: isArabic ? getArabicServiceName(service.name || service.id) : service.name
           }));
           setServices(updatedServices);
         } else {
@@ -98,24 +95,6 @@ const PopularServices = () => {
     return translations[englishName.toLowerCase()] || englishName;
   };
 
-  // دالة للحصول على صورة مناسبة للخدمة
-  const getServiceImage = (serviceName) => {
-    const imageMap = {
-      'plumbing': 'https://images.unsplash.com/photo-1585704032915-c3400305e979?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'electrical': 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'cleaning': 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'house_cleaning': 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'carpentry': 'https://images.unsplash.com/photo-1601612628452-9e99ced43524?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'painting': 'https://images.unsplash.com/photo-1562259929-b4e1fd3aef09?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'appliance_repair': 'https://images.unsplash.com/photo-1581092921461-39b9884e8331?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'landscaping': 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'gardening': 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'moving_services': 'https://images.unsplash.com/photo-1600518464441-7212cda107e3?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60',
-      'furniture_moving': 'https://images.unsplash.com/photo-1600518464441-7212cda107e3?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60'
-    };
-    return imageMap[serviceName.toLowerCase()] || 'https://images.unsplash.com/photo-1558618047-fd90bf9e5ee1?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=60';
-  };
-
   // البيانات الاحتياطية
   const getFallbackServices = () => [
           {
@@ -123,7 +102,6 @@ const PopularServices = () => {
       name: isArabic ? 'سباكة' : 'Plumbing',
             icon: '🔧',
       description: isArabic ? 'خدمات سباكة احترافية لمنزلك' : 'Professional plumbing services for your home',
-      image_url: getServiceImage('plumbing'),
             service_count: 24
           },
           {
@@ -131,7 +109,6 @@ const PopularServices = () => {
       name: isArabic ? 'كهرباء' : 'Electrical',
             icon: '⚡',
       description: isArabic ? 'إصلاح وتركيب كهربائي متخصص' : 'Expert electrical repair and installation',
-      image_url: getServiceImage('electrical'),
             service_count: 19
           },
           {
@@ -139,7 +116,6 @@ const PopularServices = () => {
       name: isArabic ? 'تنظيف منازل' : 'House Cleaning',
             icon: '🧹',
       description: isArabic ? 'اجعل مساحتك نظيفة مع خدمات التنظيف لدينا' : 'Keep your space spotless with our cleaning services',
-      image_url: getServiceImage('cleaning'),
             service_count: 31
           },
           {
@@ -147,7 +123,6 @@ const PopularServices = () => {
       name: isArabic ? 'نجارة' : 'Carpentry',
             icon: '🔨',
       description: isArabic ? 'حلول نجارة وأثاث مخصصة' : 'Custom woodworking and furniture solutions',
-      image_url: getServiceImage('carpentry'),
             service_count: 15
           },
           {
@@ -155,7 +130,6 @@ const PopularServices = () => {
       name: isArabic ? 'طلاء' : 'Painting',
             icon: '🖌️',
       description: isArabic ? 'خدمات طلاء احترافية لأي سطح' : 'Professional painting services for any surface',
-      image_url: getServiceImage('painting'),
             service_count: 22
           },
           {
@@ -163,7 +137,6 @@ const PopularServices = () => {
       name: isArabic ? 'إصلاح أجهزة' : 'Appliance Repair',
             icon: '🔌',
       description: isArabic ? 'إصلاح أجهزة المنزل بسرعة وكفاءة' : 'Fix your home appliances quickly and efficiently',
-      image_url: getServiceImage('appliance_repair'),
             service_count: 17
           },
           {
@@ -171,7 +144,6 @@ const PopularServices = () => {
       name: isArabic ? 'تنسيق حدائق' : 'Gardening',
             icon: '🌱',
       description: isArabic ? 'خدمات تنسيق وصيانة الحدائق' : 'Landscaping and garden maintenance services',
-      image_url: getServiceImage('landscaping'),
             service_count: 13
           },
           {
@@ -179,18 +151,17 @@ const PopularServices = () => {
       name: isArabic ? 'خدمات نقل' : 'Moving Services',
             icon: '📦',
       description: isArabic ? 'مساعدة احترافية لاحتياجات النقل' : 'Professional help for your moving needs',
-      image_url: getServiceImage('moving_services'),
             service_count: 11
           }
   ];
 
   if (loading) {
     return (
-      <section className="py-16 bg-white">
+      <section className="py-12 bg-gray-50">
         <div className="container mx-auto px-4">
-          <div className="flex flex-col justify-center items-center h-72">
-            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
-            <p className="mt-4 text-gray-600">{isArabic ? 'جاري تحميل الخدمات الشائعة...' : 'Loading popular services...'}</p>
+          <div className="flex flex-col justify-center items-center h-48">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            <p className="mt-4 text-gray-600 text-sm">{isArabic ? 'جاري تحميل الخدمات الشائعة...' : 'Loading popular services...'}</p>
           </div>
         </div>
       </section>
@@ -199,7 +170,7 @@ const PopularServices = () => {
 
   if (error && services.length === 0) {
     return (
-      <section className="py-16 bg-white">
+      <section className="py-12 bg-gray-50">
         <div className="container mx-auto px-4">
           <div className="text-center text-red-500">
             <p>{error}</p>
@@ -210,78 +181,66 @@ const PopularServices = () => {
   }
 
   return (
-    <section className="py-16 bg-white">
+    <section className="py-12 bg-gray-50">
       <div className="container mx-auto px-4">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4 relative inline-block">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-3 relative inline-block">
             {isArabic ? 'الخدمات الشائعة' : 'Popular Services'}
             <span className="absolute bottom-0 left-0 w-full h-1 bg-blue-400 rounded-full"></span>
           </h2>
-          <p className="text-gray-600 max-w-2xl mx-auto">
+          <p className="text-gray-600 max-w-xl mx-auto text-sm">
             {isArabic 
               ? 'اكتشف خدماتنا الأكثر طلبًا من المحترفين الحاصلين على أعلى التقييمات'
               : 'Discover our most requested services from top-rated professionals'}
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {services.map((service) => (
             <div 
               key={service.id} 
-              onClick={() => navigate(`/service/${service.id}`)} 
+              onClick={() => navigate(`/search?service=${service.id}&name=${encodeURIComponent(service.name)}`)} 
               className="cursor-pointer"
             >
-              <div className="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition duration-300 transform hover:-translate-y-1 hover:scale-102">
-                <div className="h-40 relative overflow-hidden">
-                  <img 
-                    src={service.image_url || `https://via.placeholder.com/400x250?text=${service.name}`} 
-                    alt={service.name} 
-                    className="w-full h-full object-cover transform hover:scale-110 transition duration-500"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                  <div className="absolute bottom-4 left-4 text-white">
-                    <span className="text-2xl mr-2">
-                      {service.icon || getServiceIcon(service.name)}
-                    </span>
-                    <span className="font-medium">
-                      {service.alistpro_count > 0 || service.service_count > 0 
-                        ? isArabic 
-                          ? `${service.alistpro_count || service.service_count}+ محترف` 
-                          : `${service.alistpro_count || service.service_count}+ Pros`
-                        : isArabic ? 'متاح' : 'Available'}
-                    </span>
+              <div className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition duration-300 transform hover:-translate-y-1 text-center">
+                <div className="flex justify-center mb-3">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xl">
+                    {service.icon ? (
+                      <span>{service.icon}</span>
+                    ) : (
+                      getServiceIcon(service.name)
+                    )}
                   </div>
                 </div>
                 
-                <div className="p-5">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">{service.name}</h3>
-                  <p className="text-gray-600 mb-4 line-clamp-2">{service.description || (isArabic ? 'استكشف خدمات ' + service.name : 'Explore ' + service.name + ' services')}</p>
-                  
-                  <div 
-                    className="flex justify-between items-center pt-2 border-t border-gray-100 cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation(); // Prevent triggering the parent click event
-                      navigate(`/search?service=${service.id}&name=${encodeURIComponent(service.name)}`);
-                    }}
-                  >
-                    <span className="text-blue-600 font-medium">
-                      {isArabic ? '\u0639\u0631\u0636 \u0627\u0644\u062e\u062f\u0645\u0627\u062a' : 'View Services'}
-                    </span>
-                    <FaArrowRight className={`text-blue-600 ${isArabic ? 'rotate-180' : ''}`} />
-                  </div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-1 line-clamp-2">{service.name}</h3>
+                
+                <p className="text-xs text-gray-500 mb-2">
+                  {service.alistpro_count > 0 || service.service_count > 0 
+                    ? isArabic 
+                      ? `${service.alistpro_count || service.service_count}+ محترف` 
+                      : `${service.alistpro_count || service.service_count}+ Pros`
+                    : isArabic ? 'متاح' : 'Available'}
+                </p>
+                
+                <div className="flex justify-center">
+                  <span className="text-blue-600 text-xs font-medium flex items-center">
+                    {isArabic ? 'عرض' : 'View'}
+                    <FaArrowRight className={`ml-1 text-xs ${isArabic ? 'rotate-180' : ''}`} />
+                  </span>
                 </div>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="text-center mt-12">
+        <div className="text-center mt-8">
           <Link 
             to="/services" 
-            className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition duration-300 shadow-md hover:shadow-lg"
+            className="inline-flex items-center justify-center px-5 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition duration-300 shadow-sm hover:shadow-md text-sm"
           >
             {isArabic ? 'استكشاف جميع الخدمات' : 'Explore All Services'}
-            <FaArrowRight className={`${isArabic ? 'mr-2 rotate-180' : 'ml-2'}`} />
+            <FaArrowRight className={`${isArabic ? 'mr-2 rotate-180' : 'ml-2'} text-xs`} />
           </Link>
         </div>
       </div>

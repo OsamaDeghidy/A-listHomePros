@@ -16,7 +16,7 @@ const HomePage = () => {
       <FeaturedPros />
       <TestimonialsSection />
       <BlogSection />
-      <CtaSection />
+    
     </div>
   );
 };
