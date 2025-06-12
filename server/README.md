@@ -609,6 +609,20 @@ google
 
 
 
+digitalocean
+Jwest@alisthp.com
+J1983we$t
+
+godady account
+user : 191737203
+pass :571W2nd$t
+
+
+
+
+
+
+
 cd server; pip install channels==4.0.0 channels-redis==4.1.0
 
 عايز اعمل ابلكيشن اللاماكن    بحيث يكون فيه خاصيه تتبع الاماكن و اللوكيشن وبحث الخدمه عن طريق اللكيشن و يقيس المسافه ويدينى استميتد تايم عن ممكن مقدم الخدمه يوصلى ف قد  اليه
