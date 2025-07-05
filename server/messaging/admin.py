@@ -47,9 +47,9 @@ class MessageInline(admin.TabularInline):
         elif obj.message_type == 'IMAGE':
             return '📷 Image Message'
         elif obj.message_type == 'FILE':
-            return f'📎 File: {obj.file_name or "Unknown"}'
+            return '📎 File: {}'.format(obj.file_name or "Unknown")
         else:
-            return f'{obj.message_type} Message'
+            return '{} Message'.format(obj.message_type)
     content_preview.short_description = 'Content Preview'
     
     def reaction_count(self, obj):
@@ -131,7 +131,7 @@ class ConversationAdmin(admin.ModelAdmin):
             names = [p.name or p.email.split('@')[0] for p in participants]
             participant_count = obj.participants.count()
             if participant_count > 3:
-                title = f"{', '.join(names)} and {participant_count - 3} others"
+                title = "{} and {} others".format(', '.join(names), participant_count - 3)
             else:
                 title = ', '.join(names)
             return format_html('💬 {}', title)
@@ -187,9 +187,9 @@ class ConversationAdmin(admin.ModelAdmin):
         if obj.is_muted:
             flags.append('<span style="background: orange; color: white; padding: 2px 6px; border-radius: 3px;">🔇 Muted</span>')
         if obj.related_object_type:
-            flags.append(f'<span style="background: blue; color: white; padding: 2px 6px; border-radius: 3px;">🔗 {obj.related_object_type}</span>')
+            flags.append('<span style="background: blue; color: white; padding: 2px 6px; border-radius: 3px;">🔗 {}</span>'.format(obj.related_object_type))
         
-        return format_html(' '.join(flags)) if flags else '-'
+        return mark_safe(' '.join(flags)) if flags else '-'
     status_flags.short_description = 'Status'
     
     def participant_list(self, obj):
@@ -198,9 +198,9 @@ class ConversationAdmin(admin.ModelAdmin):
         for participant in participants:
             admin_badge = '👑' if participant == obj.admin else ''
             participant_html.append(
-                f'<div style="margin: 2px 0;">{admin_badge} {participant.name or participant.email}</div>'
+                '<div style="margin: 2px 0;">{} {}</div>'.format(admin_badge, participant.name or participant.email)
             )
-        return format_html(''.join(participant_html))
+        return mark_safe(''.join(participant_html))
     participant_list.short_description = 'Participant List'
     
     def message_statistics(self, obj):
@@ -214,9 +214,9 @@ class ConversationAdmin(admin.ModelAdmin):
         
         stats_html = []
         for key, value in stats.items():
-            stats_html.append(f'<div><strong>{key}:</strong> {value}</div>')
+            stats_html.append('<div><strong>{}:</strong> {}</div>'.format(key, value))
         
-        return format_html(''.join(stats_html))
+        return mark_safe(''.join(stats_html))
     message_statistics.short_description = 'Message Statistics'
     
     def last_message_info(self, obj):
@@ -242,24 +242,24 @@ class ConversationAdmin(admin.ModelAdmin):
         analytics_html = ['<div><strong>Most Active Participants:</strong></div>']
         for stat in participant_stats:
             name = stat['sender__name'] or stat['sender__email']
-            analytics_html.append(f'<div>• {name}: {stat["message_count"]} messages</div>')
+            analytics_html.append('<div>• {}: {} messages</div>'.format(name, stat["message_count"]))
         
-        return format_html(''.join(analytics_html))
+        return mark_safe(''.join(analytics_html))
     conversation_analytics.short_description = 'Analytics'
     
     def archive_conversations(self, request, queryset):
         updated = queryset.update(is_archived=True)
-        self.message_user(request, f'{updated} conversations archived successfully.')
+        self.message_user(request, '{} conversations archived successfully.'.format(updated))
     archive_conversations.short_description = 'Archive selected conversations'
     
     def unarchive_conversations(self, request, queryset):
         updated = queryset.update(is_archived=False)
-        self.message_user(request, f'{updated} conversations unarchived successfully.')
+        self.message_user(request, '{} conversations unarchived successfully.'.format(updated))
     unarchive_conversations.short_description = 'Unarchive selected conversations'
     
     def export_conversation_data(self, request, queryset):
         # This would export conversation data - placeholder for now
-        self.message_user(request, f'Export feature coming soon for {queryset.count()} conversations.')
+        self.message_user(request, 'Export feature coming soon for {} conversations.'.format(queryset.count()))
     export_conversation_data.short_description = 'Export conversation data'
 
 
@@ -367,7 +367,7 @@ class MessageAdmin(admin.ModelAdmin):
             if obj.file:
                 return format_html('📎 <a href="{}" target="_blank">{}</a>', 
                                  obj.file.url, obj.file_name or 'Download File')
-            return f'📎 File: {obj.file_name or "Unknown"}'
+            return '📎 File: {}'.format(obj.file_name or "Unknown")
         elif obj.message_type == 'LOCATION':
             if obj.latitude and obj.longitude:
                 return format_html('📍 <a href="https://maps.google.com/?q={},{}" target="_blank">{}</a>',
@@ -376,7 +376,7 @@ class MessageAdmin(admin.ModelAdmin):
         elif obj.message_type == 'SYSTEM':
             return format_html('<span style="color: blue; font-style: italic;">🤖 {}</span>', obj.content)
         else:
-            return f'{obj.message_type} Message'
+            return '{} Message'.format(obj.message_type)
     content_preview.short_description = 'Content'
     
     def message_type_badge(self, obj):
@@ -397,7 +397,7 @@ class MessageAdmin(admin.ModelAdmin):
         if reactions:
             reaction_html = []
             for reaction in reactions:
-                reaction_html.append(f'{reaction["reaction_type"]} {reaction["count"]}')
+                reaction_html.append('{} {}'.format(reaction["reaction_type"], reaction["count"]))
             return format_html(' '.join(reaction_html))
         return '-'
     reaction_summary.short_description = 'Reactions'
@@ -419,8 +419,8 @@ class MessageAdmin(admin.ModelAdmin):
             elif read_count == participants_excluding_sender:
                 return format_html('<span style="color: green;">👁️ Read by all</span>')
             else:
-                return format_html('<span style="color: orange;">👁️ Read by {}/{} ({:.0f}%)</span>', 
-                                 read_count, participants_excluding_sender, read_percentage)
+                return format_html('<span style="color: orange;">👁️ Read by {}/{} ({}%)</span>', 
+                                 read_count, participants_excluding_sender, int(read_percentage))
         else:
             # System message
             return format_html('<span style="color: gray;">System message</span>')
@@ -435,7 +435,7 @@ class MessageAdmin(admin.ModelAdmin):
         if obj.reply_to:
             flags.append('<span style="background: purple; color: white; padding: 2px 6px; border-radius: 3px;">↩️ Reply</span>')
         
-        return format_html(' '.join(flags)) if flags else '-'
+        return mark_safe(' '.join(flags)) if flags else '-'
     message_flags.short_description = 'Flags'
     
     def reaction_breakdown(self, obj):
@@ -444,8 +444,8 @@ class MessageAdmin(admin.ModelAdmin):
             reaction_html = ['<div><strong>Reactions:</strong></div>']
             for reaction in reactions:
                 user_name = reaction.user.name or reaction.user.email
-                reaction_html.append(f'<div>• {reaction.reaction_type} by {user_name}</div>')
-            return format_html(''.join(reaction_html))
+                reaction_html.append('<div>• {} by {}</div>'.format(reaction.reaction_type, user_name))
+            return mark_safe(''.join(reaction_html))
         return 'No reactions'
     reaction_breakdown.short_description = 'Reaction Breakdown'
     
@@ -455,21 +455,21 @@ class MessageAdmin(admin.ModelAdmin):
             reader_html = ['<div><strong>Read by:</strong></div>']
             for reader in readers:
                 reader_name = reader.name or reader.email
-                reader_html.append(f'<div>• {reader_name}</div>')
-            return format_html(''.join(reader_html))
+                reader_html.append('<div>• {}</div>'.format(reader_name))
+            return mark_safe(''.join(reader_html))
         return 'Not read by anyone'
     read_by_list.short_description = 'Read By'
     
     def message_analytics(self, obj):
         analytics_html = [
-            f'<div><strong>Character Count:</strong> {len(obj.content)}</div>',
-            f'<div><strong>Word Count:</strong> {len(obj.content.split())}</div>',
+            '<div><strong>Character Count:</strong> {}</div>'.format(len(obj.content)),
+            '<div><strong>Word Count:</strong> {}</div>'.format(len(obj.content.split())),
         ]
         
         if obj.file_size:
-            analytics_html.append(f'<div><strong>File Size:</strong> {obj.file_size} bytes</div>')
+            analytics_html.append('<div><strong>File Size:</strong> {} bytes</div>'.format(obj.file_size))
         
-        return format_html(''.join(analytics_html))
+        return mark_safe(''.join(analytics_html))
     message_analytics.short_description = 'Analytics'
     
     def mark_as_read_by_all(self, request, queryset):
@@ -479,12 +479,12 @@ class MessageAdmin(admin.ModelAdmin):
             for participant in participants:
                 message.read_by.add(participant)
             total_marked += 1
-        self.message_user(request, f'{total_marked} messages marked as read by all participants.')
+        self.message_user(request, '{} messages marked as read by all participants.'.format(total_marked))
     mark_as_read_by_all.short_description = 'Mark as read by all participants'
     
     def soft_delete_messages(self, request, queryset):
         updated = queryset.update(is_deleted=True, deleted_at=timezone.now())
-        self.message_user(request, f'{updated} messages soft deleted successfully.')
+        self.message_user(request, '{} messages soft deleted successfully.'.format(updated))
     soft_delete_messages.short_description = 'Soft delete selected messages'
 
 
@@ -586,17 +586,17 @@ class ConversationMemberAdmin(admin.ModelAdmin):
         if obj.left_at:
             status.append('<span style="background: gray; color: white; padding: 2px 6px; border-radius: 3px;">👋 Left</span>')
         
-        return format_html(' '.join(status)) if status else format_html('<span style="color: green;">✅ Active</span>')
+        return mark_safe(' '.join(status)) if status else format_html('<span style="color: green;">✅ Active</span>')
     member_status.short_description = 'Status'
     
     def activity_info(self, obj):
-        info_html = [f'<div><strong>Joined:</strong> {obj.joined_at.strftime("%Y-%m-%d %H:%M")}</div>']
+        info_html = ['<div><strong>Joined:</strong> {}</div>'.format(obj.joined_at.strftime("%Y-%m-%d %H:%M"))]
         
         if obj.last_read_at:
-            info_html.append(f'<div><strong>Last Read:</strong> {obj.last_read_at.strftime("%Y-%m-%d %H:%M")}</div>')
+            info_html.append('<div><strong>Last Read:</strong> {}</div>'.format(obj.last_read_at.strftime("%Y-%m-%d %H:%M")))
         
         if obj.left_at:
-            info_html.append(f'<div><strong>Left:</strong> {obj.left_at.strftime("%Y-%m-%d %H:%M")}</div>')
+            info_html.append('<div><strong>Left:</strong> {}</div>'.format(obj.left_at.strftime("%Y-%m-%d %H:%M")))
         
-        return format_html(''.join(info_html))
+        return mark_safe(''.join(info_html))
     activity_info.short_description = 'Activity'

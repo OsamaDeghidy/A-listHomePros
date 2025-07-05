@@ -61,6 +61,20 @@ const ClientServiceRequestsPage = () => {
   const [updating, setUpdating] = useState(false);
   const [previousQuotesCount, setPreviousQuotesCount] = useState({});
 
+  // Appointment booking state
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState(null);
+  const [appointmentData, setAppointmentData] = useState({
+    date: '', 
+    time: '', 
+    description: '', 
+    address: '',
+    selectedSlot: null
+  });
+  const [availabilitySlots, setAvailabilitySlots] = useState([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [creatingAppointment, setCreatingAppointment] = useState(false);
+
   // Redirect if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
@@ -133,7 +147,10 @@ const ClientServiceRequestsPage = () => {
       };
 
       const response = await alistProsService.getServiceRequests(params);
-      setServiceRequests(response.data.results || response.data || []);
+      const requests = response.data.results || response.data || [];
+      console.log('📋 Service Requests fetched:', requests);
+      console.log('📋 Requests with accepted status:', requests.filter(r => r.status === 'accepted'));
+      setServiceRequests(requests);
     } catch (err) {
       console.error('Error fetching service requests:', err);
       setError(isArabic ? 'خطأ في تحميل طلبات الخدمة' : 'Error loading service requests');
@@ -357,6 +374,220 @@ const ClientServiceRequestsPage = () => {
       cancelled: 'bg-red-100 text-red-800'
     };
     return colorMap[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  // Handle appointment booking
+  const handleBookAppointment = async (quote) => {
+    console.log('📅 Starting appointment booking for quote:', quote);
+    setSelectedQuote(quote);
+    setShowAppointmentModal(true);
+    
+    // Fetch availability for the professional
+    if (quote.professional?.id) {
+      await fetchAvailabilitySlots(quote.professional.id);
+    }
+  };
+
+  // Fetch availability slots for professional
+  const fetchAvailabilitySlots = async (professionalId) => {
+    console.log('📅 Fetching availability for professional:', professionalId);
+    setLoadingAvailability(true);
+    
+    try {
+      const token = localStorage.getItem('token');
+      let url = `http://127.0.0.1:8000/api/scheduling/availability-slots/for_professional/?alistpro=${professionalId}`;
+      console.log('📡 Fetching availability from URL:', url);
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📅 Availability slots fetched:', data);
+        
+        if (data.results && data.results.length > 0) {
+          console.log('✅ Found availability slots:', data.results);
+          setAvailabilitySlots(data.results);
+        } else {
+          console.log('⚠️ No availability slots found');
+          setAvailabilitySlots([]);
+        }
+      } else {
+        console.error('❌ Failed to fetch availability slots. Status:', response.status);
+        setAvailabilitySlots([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching availability slots:', error);
+      setAvailabilitySlots([]);
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  // Get available dates
+  const getAvailableDates = () => {
+    if (availabilitySlots.length === 0) return [];
+    
+    const dates = [];
+    const today = new Date();
+    
+    // Generate next 30 days and check availability
+    for (let i = 1; i <= 30; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, etc.
+      
+      // Check if professional is available on this day
+      const hasAvailability = availabilitySlots.some(slot => slot.day_of_week === dayOfWeek);
+      
+      if (hasAvailability) {
+        dates.push({
+          date: date.toISOString().split('T')[0],
+          dayName: date.toLocaleDateString(isArabic ? 'ar' : 'en', { weekday: 'short' }),
+          day: date.getDate(),
+          month: date.toLocaleDateString(isArabic ? 'ar' : 'en', { month: 'short' })
+        });
+      }
+    }
+    
+    return dates.slice(0, 14); // Limit to 14 available dates
+  };
+
+  // Get available times for selected date
+  const getAvailableTimesForDate = (selectedDate) => {
+    if (!selectedDate || availabilitySlots.length === 0) return [];
+    
+    const date = new Date(selectedDate);
+    const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, etc.
+    
+    // Find available slots for this day of week
+    const daySlots = availabilitySlots.filter(slot => slot.day_of_week === dayOfWeek);
+    
+    // Convert to time options
+    const times = [];
+    daySlots.forEach(slot => {
+      const startTime = slot.start_time;
+      const endTime = slot.end_time;
+      
+      // Generate hourly slots between start and end time
+      let current = startTime;
+      while (current < endTime) {
+        times.push({
+          value: current.substring(0, 5), // HH:MM format
+          label: current.substring(0, 5)
+        });
+        
+        // Add 1 hour
+        const [hours, minutes] = current.split(':');
+        const nextHour = (parseInt(hours) + 1).toString().padStart(2, '0');
+        current = `${nextHour}:${minutes}`;
+        
+        if (current >= endTime) break;
+      }
+    });
+    
+    return times;
+  };
+
+  // Helper function to add one hour to time
+  const addHourToTime = (timeString) => {
+    const [hours, minutes] = timeString.split(':');
+    const nextHour = (parseInt(hours) + 1) % 24;
+    return `${nextHour.toString().padStart(2, '0')}:${minutes}`;
+  };
+
+  // Submit appointment booking
+  const handleSubmitAppointment = async (e) => {
+    e.preventDefault();
+    if (creatingAppointment) return;
+
+    console.log('🗓️ Creating appointment...');
+    
+    if (!selectedQuote || !selectedQuote.professional?.id) {
+      alert(isArabic ? 'خطأ في البيانات - لا يمكن تحديد مقدم الخدمة' : 'Error in data - cannot identify professional');
+      return;
+    }
+
+    setCreatingAppointment(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      const appointmentPayload = {
+        alistpro: selectedQuote.professional.id,
+        appointment_date: appointmentData.date,
+        start_time: appointmentData.time + ':00',
+        end_time: addHourToTime(appointmentData.time) + ':00',
+        notes: appointmentData.description || selectedQuote.description || '',
+        location: appointmentData.address || selectedRequest?.location || 'سيتم تحديده'
+      };
+
+      console.log('📋 Appointment payload being sent:', appointmentPayload);
+
+      const response = await fetch('http://127.0.0.1:8000/api/scheduling/appointments/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(appointmentPayload)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Appointment booked successfully:', result);
+
+        // Close modal and reset form
+        setShowAppointmentModal(false);
+        setAppointmentData({ date: '', time: '', description: '', address: '', selectedSlot: null });
+        setSelectedQuote(null);
+
+        alert(isArabic ? `تم حجز الموعد بنجاح!` : `Appointment booked successfully!`);
+
+        // Refresh service requests
+        fetchServiceRequests();
+
+      } else {
+        const errorData = await response.json();
+        console.log('❌ Error response status:', response.status);
+        console.log('❌ Error response data:', errorData);
+        
+        // Extract the actual error message
+        let errorMessage = 'Failed to book appointment';
+        if (errorData.non_field_errors && errorData.non_field_errors.length > 0) {
+          errorMessage = errorData.non_field_errors[0];
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+        
+        throw new Error(errorMessage);
+      }
+    } catch (error) {
+      console.error('❌ Error booking appointment:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+      alert(isArabic ? `فشل في حجز الموعد: ${errorMessage}` : `Failed to book appointment: ${errorMessage}`);
+    } finally {
+      setCreatingAppointment(false);
+    }
+  };
+
+  // Handle appointment input changes
+  const handleAppointmentInputChange = (e) => {
+    const { name, value } = e.target;
+    setAppointmentData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   return (
@@ -630,6 +861,71 @@ const ClientServiceRequestsPage = () => {
                             {isArabic ? 'حذف' : 'Delete'}
                           </button>
                         )}
+
+                        {/* Test button to change status (temporary) */}
+                        {request.status !== 'accepted' && (
+                          <button
+                            onClick={() => {
+                              // Temporarily change status for testing
+                              const updatedRequests = serviceRequests.map(r => 
+                                r.id === request.id ? { ...r, status: 'accepted' } : r
+                              );
+                              setServiceRequests(updatedRequests);
+                              console.log('🔧 TEST: Changed request status to accepted');
+                            }}
+                            className="flex items-center px-3 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+                            title="Test: Change to Accepted"
+                          >
+                            🧪 Test Accept
+                          </button>
+                        )}
+
+                        {/* Book Appointment button - only show for accepted requests */}
+                        {request.status === 'accepted' && (
+                          <button
+                            onClick={async () => {
+                              console.log('📅 Book Appointment clicked for request:', request);
+                              
+                              // First fetch quotes to get the accepted quote
+                              try {
+                                const response = await alistProsService.getServiceQuotes({ service_request: request.id });
+                                const requestQuotes = response.data.results || response.data || [];
+                                console.log('📋 Fetched quotes for request:', requestQuotes);
+                                const acceptedQuote = requestQuotes.find(quote => quote.status === 'accepted');
+                                
+                                if (acceptedQuote) {
+                                  console.log('✅ Found accepted quote:', acceptedQuote);
+                                  handleBookAppointment(acceptedQuote);
+                                } else {
+                                  console.log('❌ No accepted quote found, will create mock quote');
+                                  // Create a mock quote for testing
+                                  const mockQuote = {
+                                    id: 'mock-' + request.id,
+                                    title: request.title,
+                                    description: request.description,
+                                    total_price: request.budget_max || 100,
+                                    status: 'accepted',
+                                    professional: {
+                                      id: 1, // Default professional ID for testing
+                                      name: 'Test Professional',
+                                      business_name: 'Test Business'
+                                    }
+                                  };
+                                  console.log('🔧 Using mock quote for testing:', mockQuote);
+                                  handleBookAppointment(mockQuote);
+                                }
+                              } catch (error) {
+                                console.error('Error fetching quotes:', error);
+                                alert(isArabic ? 'خطأ في جلب تفاصيل العرض' : 'Error fetching quote details');
+                              }
+                            }}
+                            className="flex items-center px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                            title={isArabic ? 'حجز موعد للخدمة' : 'Book Appointment for Service'}
+                          >
+                            <FaCalendarAlt className="h-4 w-4 mr-2" />
+                            {isArabic ? 'حجز موعد' : 'Book Appointment'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -863,10 +1159,19 @@ const ClientServiceRequestsPage = () => {
                                   </>
                                 )}
                                 {quote.status === 'accepted' && (
-                                  <span className="flex items-center text-green-600 font-medium">
+                                  <>
+                                    <span className="flex items-center text-green-600 font-medium mr-3">
                                     <FaCheckCircle className="h-4 w-4 mr-2" />
                                     {isArabic ? 'تم القبول' : 'Accepted'}
                                   </span>
+                                    <button
+                                      onClick={() => handleBookAppointment(quote)}
+                                      className="flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                    >
+                                      <FaCalendarAlt className="h-4 w-4 mr-2" />
+                                      {isArabic ? 'حجز موعد' : 'Book Appointment'}
+                                    </button>
+                                  </>
                                 )}
                                 {quote.status === 'rejected' && (
                                   <span className="flex items-center text-red-600 font-medium">
@@ -1026,6 +1331,202 @@ const ClientServiceRequestsPage = () => {
                     </button>
                   </div>
                 </form>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Appointment Booking Modal */}
+        <AnimatePresence>
+          {showAppointmentModal && selectedQuote && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              >
+                <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {isArabic ? 'حجز موعد' : 'Book Appointment'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowAppointmentModal(false);
+                      setSelectedQuote(null);
+                      setAppointmentData({ date: '', time: '', description: '', address: '', selectedSlot: null });
+                    }}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <FaTimesCircle className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="p-6">
+                  {/* Professional Info */}
+                  <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-2">
+                      {isArabic ? 'المحترف المختار:' : 'Selected Professional:'}
+                    </h4>
+                    <p className="text-blue-700 font-medium">
+                      {selectedQuote.professional?.business_name || selectedQuote.professional?.name || 'Professional'}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      {selectedQuote.title} - {formatCurrency(selectedQuote.total_price)}
+                    </p>
+                  </div>
+
+                  {/* Loading availability */}
+                  {loadingAvailability && (
+                    <div className="text-center py-8">
+                      <FaSpinner className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-4" />
+                      <p className="text-gray-600">
+                        {isArabic ? 'جاري تحميل المواعيد المتاحة...' : 'Loading available times...'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* No availability */}
+                  {!loadingAvailability && availabilitySlots.length === 0 && (
+                    <div className="text-center py-8">
+                      <FaCalendarAlt className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600 mb-2">
+                        {isArabic ? 'لا توجد مواعيد متاحة حالياً' : 'No available appointments at the moment'}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {isArabic ? 'يرجى التواصل مع المحترف مباشرة' : 'Please contact the professional directly'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Available dates */}
+                  {!loadingAvailability && availabilitySlots.length > 0 && (
+                    <form onSubmit={handleSubmitAppointment} className="space-y-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          {isArabic ? 'اختر التاريخ المناسب:' : 'Select a date:'}
+                        </label>
+                        <div className="grid grid-cols-7 gap-2">
+                          {getAvailableDates().map((dateOption) => (
+                            <button
+                              key={dateOption.date}
+                              type="button"
+                              onClick={() => setAppointmentData(prev => ({ ...prev, date: dateOption.date, time: '' }))}
+                              className={`p-3 text-center rounded-lg border transition-colors ${
+                                appointmentData.date === dateOption.date
+                                  ? 'bg-blue-500 text-white border-blue-500'
+                                  : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50'
+                              }`}
+                            >
+                              <div className="text-xs text-gray-500">{dateOption.dayName}</div>
+                              <div className="font-medium">{dateOption.day}</div>
+                              <div className="text-xs">{dateOption.month}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Available times */}
+                      {appointmentData.date && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            {isArabic ? 'اختر الوقت المناسب:' : 'Select a time:'}
+                          </label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {getAvailableTimesForDate(appointmentData.date).map((timeOption) => (
+                              <button
+                                key={timeOption.value}
+                                type="button"
+                                onClick={() => setAppointmentData(prev => ({ ...prev, time: timeOption.value }))}
+                                className={`p-3 text-center rounded-lg border transition-colors ${
+                                  appointmentData.time === timeOption.value
+                                    ? 'bg-green-500 text-white border-green-500'
+                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-green-50'
+                                }`}
+                              >
+                                {timeOption.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Additional details */}
+                      {appointmentData.date && appointmentData.time && (
+                        <div className="space-y-4">
+                          <div className="p-4 bg-green-50 rounded-lg">
+                            <h5 className="font-medium text-green-800 mb-1">
+                              {isArabic ? 'الموعد المختار:' : 'Selected appointment:'}
+                            </h5>
+                            <p className="text-green-700">
+                              {new Date(appointmentData.date).toLocaleDateString(isArabic ? 'ar' : 'en', {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              })} {isArabic ? 'في' : 'at'} {appointmentData.time}
+                            </p>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {isArabic ? 'ملاحظات إضافية (اختيارية):' : 'Additional notes (optional):'}
+                            </label>
+                            <textarea
+                              name="description"
+                              value={appointmentData.description}
+                              onChange={handleAppointmentInputChange}
+                              rows={3}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder={isArabic ? 'أي ملاحظات خاصة بالموعد...' : 'Any specific notes about the appointment...'}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {isArabic ? 'العنوان:' : 'Address:'}
+                            </label>
+                            <input
+                              type="text"
+                              name="address"
+                              value={appointmentData.address}
+                              onChange={handleAppointmentInputChange}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder={isArabic ? 'عنوان المكان للخدمة...' : 'Service location address...'}
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-end space-x-4 pt-4 border-t border-gray-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAppointmentModal(false);
+                                setSelectedQuote(null);
+                                setAppointmentData({ date: '', time: '', description: '', address: '', selectedSlot: null });
+                              }}
+                              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                            >
+                              {isArabic ? 'إلغاء' : 'Cancel'}
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={creatingAppointment}
+                              className="flex items-center px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                              {creatingAppointment && <FaSpinner className="animate-spin mr-2 h-4 w-4" />}
+                              {isArabic ? 'حجز الموعد' : 'Book Appointment'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </form>
+                  )}
+                </div>
               </motion.div>
             </motion.div>
           )}

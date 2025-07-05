@@ -67,6 +67,23 @@ class ServiceRequest(TimeStampedModel):
     # Images
     images = models.JSONField(default=list, blank=True, help_text='List of image URLs')
     
+    # Conversation Integration - NEW FIELDS
+    conversation = models.OneToOneField(
+        'messaging.Conversation', 
+        on_delete=models.SET_NULL, 
+        null=True, blank=True,
+        related_name='service_request',
+        help_text='Associated conversation for this service request'
+    )
+    is_appointment_scheduled = models.BooleanField(
+        default=False,
+        help_text='Whether an appointment has been scheduled for this request'
+    )
+    appointment_scheduled_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='When the appointment was scheduled'
+    )
+    
     class Meta:
         ordering = ['-created_at']
     
@@ -110,9 +127,37 @@ class ServiceQuote(TimeStampedModel):
     # Response from client
     client_message = models.TextField(blank=True)
     
+    # Installment Payment Support - NEW FIELDS
+    supports_installments = models.BooleanField(
+        default=True,
+        help_text='Whether this quote supports installment payments'
+    )
+    first_payment_percentage = models.DecimalField(
+        max_digits=5, decimal_places=2, default=50.00,
+        help_text='Percentage of total price for first payment'
+    )
+    first_payment_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Amount for first payment (calculated automatically)'
+    )
+    second_payment_amount = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Amount for second payment (calculated automatically)'
+    )
+    
     class Meta:
         ordering = ['-created_at']
         unique_together = ['service_request', 'professional']
+    
+    def calculate_installment_amounts(self):
+        """Calculate first and second payment amounts"""
+        if self.supports_installments and self.total_price:
+            self.first_payment_amount = self.total_price * (self.first_payment_percentage / 100)
+            self.second_payment_amount = self.total_price - self.first_payment_amount
+    
+    def save(self, *args, **kwargs):
+        self.calculate_installment_amounts()
+        super().save(*args, **kwargs)
     
     def __str__(self):
         return f"Quote for {self.service_request.title} by {self.professional.name}"

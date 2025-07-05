@@ -59,6 +59,10 @@ The backend is organized into modular Django apps:
    cd server
    python -m venv venv
    venv\Scripts\activate
+   python manage.py create_subscription_plans
+   Swagger UI: http://localhost:8000/swagger/
+ReDoc: http://localhost:8000/redoc/
+OpenAPI JSON: http://localhost:8000/swagger.json
    ```
 3. Install dependencies:
    ```
@@ -619,10 +623,42 @@ pass :571W2nd$t
 
 
 
-
+Stripe is
+ jwest@alisthp.com
+J1983we$t2025
 
 
 
 cd server; pip install channels==4.0.0 channels-redis==4.1.0
 
 عايز اعمل ابلكيشن اللاماكن    بحيث يكون فيه خاصيه تتبع الاماكن و اللوكيشن وبحث الخدمه عن طريق اللكيشن و يقيس المسافه ويدينى استميتد تايم عن ممكن مقدم الخدمه يوصلى ف قد  اليه
+
+
+
+#degtal ocean config
+#DB_USER=doadmin
+#DB_PASSWORD= osam0Esmael
+#DB_HOST= 159.223.177.1
+#DB_PORT=5432
+#DB_NAME=defaultdb
+
+# ssh root@159.223.177.1
+# osam0Esmael
+# su sammy
+# cd ~/myprojectdir
+# source myprojectenv/bin/activate
+
+# su sammy
+# cd ~/myprojectapi
+# source myprojectenv/bin/activate
+# sudo apt install snap
+# sudo snap install --classic certbot
+# sudo ln -s /snap/bin/certbot/usr/bin/certbot
+# sudo certbot --nginx
+# sudo systemctl restart gunicorn
+# sudo systemctl daemon-reload 
+# sudo systemctl restart gunicorn.socket gunicorn.service
+
+# sudo nginx -t && sudo systemctl restart nginx
+# sudo nano /etc/nginx/sites-available/myproject
+# sudo ln -s /etc/nginx/sites-available/myproject /etc/nginx/sites-enabled

@@ -71,6 +71,8 @@ import NotFoundPage from './pages/NotFoundPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import EscrowFundingPage from './pages/EscrowFundingPage';
 import CreateQuotePage from './pages/CreateQuotePage';
+import SubscriptionPlansPage from './pages/SubscriptionPlansPage';
+import SubscriptionSuccessPage from './pages/SubscriptionSuccessPage';
 
 // Auth & Protected Routes
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -133,6 +135,8 @@ function App() {
             <Route path="blog/:id" element={<BlogPostPage />} />
             <Route path="services" element={<ServiceCategoriesPage />} />
             <Route path="pro-onboarding" element={<ProOnboardingPage />} />
+            <Route path="subscription-plans" element={<SubscriptionPlansPage />} />
+            <Route path="subscription-success" element={<SubscriptionSuccessPage />} />
             
             {/* Protected Routes (public layout) */}
             <Route path="booking/:proId" element={

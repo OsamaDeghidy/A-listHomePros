@@ -11,8 +11,9 @@ import csv
 import json
 
 from .models import (
-    Payment, AListHomeProStripeAccount, EscrowAccount, EscrowMilestone, 
-    EscrowTransaction, EscrowWorkOrder
+    AListHomeProStripeAccount, EscrowAccount, EscrowMilestone, 
+    EscrowTransaction, EscrowWorkOrder, SubscriptionPlan, 
+    UserSubscription, SubscriptionInvoice, ProjectCommission
 )
 
 
@@ -44,148 +45,7 @@ class EscrowWorkOrderInline(admin.TabularInline):
     ]
 
 
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = [
-        'id', 'client_info', 'professional_info', 'amount_display', 
-        'status_badge', 'payment_method', 'created_at', 'completed_at'
-    ]
-    list_filter = ['status', 'created_at', 'completed_at']
-    search_fields = [
-        'client__name', 'client__email', 'professional__business_name',
-        'professional__user__name', 'professional__user__email', 'description'
-    ]
-    readonly_fields = [
-        'created_at', 'updated_at', 'stripe_payment_intent_id', 
-        'stripe_transfer_id', 'payment_details', 'transaction_history'
-    ]
-    date_hierarchy = 'created_at'
-    
-    fieldsets = (
-        ('Basic Information', {
-            'fields': ('client', 'professional', 'amount', 'description')
-        }),
-        ('Payment Status', {
-            'fields': ('status', 'completed_at')
-        }),
-        ('Stripe Information', {
-            'fields': ('stripe_payment_intent_id', 'stripe_transfer_id'),
-            'classes': ('collapse',),
-        }),
-        ('Details', {
-            'fields': ('payment_details', 'transaction_history'),
-            'classes': ('collapse',),
-        }),
-        ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',),
-        }),
-    )
-    
-    actions = ['mark_as_completed', 'mark_as_failed', 'export_payments']
-    
-    def get_queryset(self, request):
-        return super().get_queryset(request).select_related(
-            'client', 'professional__user'
-        )
-    
-    def client_info(self, obj):
-        if obj.client:
-            return format_html(
-                '<div><strong>{}</strong></div><div style="color: gray; font-size: 11px;">{}</div>',
-                obj.client.name or obj.client.email.split('@')[0],
-                obj.client.email
-            )
-        return 'No client'
-    client_info.short_description = 'Client'
-    
-    def professional_info(self, obj):
-        if obj.professional:
-            pro_name = obj.professional.business_name or obj.professional.user.name or 'No Name'
-            pro_email = obj.professional.user.email
-            return format_html(
-                '<div><strong>{}</strong></div><div style="color: gray; font-size: 11px;">{}</div>',
-                pro_name, pro_email
-            )
-        return 'No professional'
-    professional_info.short_description = 'Professional'
-    
-    def amount_display(self, obj):
-        return format_html(
-            '<strong style="font-size: 14px;">${}</strong>',
-            obj.amount
-        )
-    amount_display.short_description = 'Amount'
-    amount_display.admin_order_field = 'amount'
-    
-    def status_badge(self, obj):
-        status_colors = {
-            'pending': '#ffc107',
-            'processing': '#17a2b8',
-            'completed': '#28a745',
-            'failed': '#dc3545',
-            'refunded': '#6c757d'
-        }
-        
-        color = status_colors.get(obj.status, '#6c757d')
-        return format_html(
-            '<span style="background: {}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">{}</span>',
-            color, obj.get_status_display()
-        )
-    status_badge.short_description = 'Status'
-    status_badge.admin_order_field = 'status'
-    
-    def payment_method(self, obj):
-        if obj.stripe_payment_intent_id:
-            return format_html(
-                '<span style="color: #635bff;">💳 Stripe</span>'
-            )
-        return format_html('<span style="color: gray;">Unknown</span>')
-    payment_method.short_description = 'Method'
-    
-    def payment_details(self, obj):
-        details = []
-        
-        if obj.stripe_payment_intent_id:
-            details.append(f'<div><strong>Stripe Payment Intent:</strong> {obj.stripe_payment_intent_id}</div>')
-        
-        if obj.stripe_transfer_id:
-            details.append(f'<div><strong>Stripe Transfer:</strong> {obj.stripe_transfer_id}</div>')
-        
-        if obj.completed_at:
-            time_to_complete = obj.completed_at - obj.created_at
-            details.append(f'<div><strong>Processing Time:</strong> {time_to_complete}</div>')
-        
-        return format_html(''.join(details)) if details else 'No additional details'
-    payment_details.short_description = 'Payment Details'
-    
-    def transaction_history(self, obj):
-        # This would show the payment transaction history
-        return format_html(
-            '<div>Transaction history would be implemented here</div>'
-        )
-    transaction_history.short_description = 'Transaction History'
-    
-    # Actions
-    def mark_as_completed(self, request, queryset):
-        updated = queryset.filter(status='processing').update(
-            status='completed',
-            completed_at=timezone.now()
-        )
-        self.message_user(request, f"Successfully marked {updated} payments as completed.")
-    mark_as_completed.short_description = "Mark selected payments as completed"
-    
-    def mark_as_failed(self, request, queryset):
-        updated = queryset.filter(status__in=['pending', 'processing']).update(
-            status='failed'
-        )
-        self.message_user(request, f"Successfully marked {updated} payments as failed.")
-    mark_as_failed.short_description = "Mark selected payments as failed"
-    
-    def export_payments(self, request, queryset):
-        # Export payments to CSV
-        self.message_user(request, f"Export functionality would be implemented for {queryset.count()} payments.")
-    export_payments.short_description = "Export selected payments"
+# Payment admin removed - replaced by unified EscrowAccount system
 
 
 @admin.register(AListHomeProStripeAccount)
@@ -783,3 +643,173 @@ class EscrowWorkOrderAdmin(admin.ModelAdmin):
         else:
             return format_html('<div style="color: gray;">Pending</div>')
     timeline_info.short_description = 'Timeline'
+
+
+# Subscription Admin Classes
+
+@admin.register(SubscriptionPlan)
+class SubscriptionPlanAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'plan_info', 'get_plan_type_display', 'get_tier_display', 
+        'price_display', 'status_badge', 'stripe_info', 'created_at'
+    ]
+    list_filter = ['plan_type', 'tier', 'is_active', 'created_at']
+    search_fields = ['name', 'description', 'stripe_product_id', 'stripe_price_id']
+    readonly_fields = ['created_at', 'updated_at', 'features_display']
+    
+    fieldsets = (
+        ('Plan Information', {
+            'fields': ('name', 'plan_type', 'tier', 'description', 'is_active')
+        }),
+        ('Pricing', {
+            'fields': ('price',)
+        }),
+        ('Features', {
+            'fields': ('features', 'features_display'),
+            'classes': ('collapse',)
+        }),
+        ('Stripe Integration', {
+            'fields': ('stripe_product_id', 'stripe_price_id'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def plan_info(self, obj):
+        return format_html(
+            '<div><strong>{}</strong></div>'
+            '<div style="color: gray; font-size: 11px;">{}</div>',
+            obj.name,
+            obj.description[:50] + '...' if len(obj.description) > 50 else obj.description
+        )
+    plan_info.short_description = 'Plan'
+    
+    def price_display(self, obj):
+        return format_html(
+            '<div style="font-size: 18px; font-weight: bold; color: green;">${}</div>'
+            '<div style="color: gray; font-size: 11px;">per month</div>',
+            obj.price
+        )
+    price_display.short_description = 'Price'
+    
+    def status_badge(self, obj):
+        if obj.is_active:
+            return format_html('<span style="background: green; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px;">✅ Active</span>')
+        else:
+            return format_html('<span style="background: red; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px;">❌ Inactive</span>')
+    status_badge.short_description = 'Status'
+    
+    def stripe_info(self, obj):
+        return format_html(
+            '<div style="font-size: 11px;">'
+            '<div>Product: <code>{}</code></div>'
+            '<div>Price: <code>{}</code></div>'
+            '</div>',
+            obj.stripe_product_id[:20] + '...' if len(obj.stripe_product_id) > 20 else obj.stripe_product_id,
+            obj.stripe_price_id[:20] + '...' if len(obj.stripe_price_id) > 20 else obj.stripe_price_id
+        )
+    stripe_info.short_description = 'Stripe IDs'
+    
+    def features_display(self, obj):
+        if obj.features:
+            features_html = '<ul style="margin: 0; padding-left: 20px;">'
+            for feature in obj.features:
+                features_html += f'<li>{feature}</li>'
+            features_html += '</ul>'
+            return format_html(features_html)
+        return 'No features listed'
+    features_display.short_description = 'Features List'
+
+
+@admin.register(UserSubscription)
+class UserSubscriptionAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'user_info', 'plan_info', 'status_badge', 
+        'period_info', 'days_remaining_display', 'created_at'
+    ]
+    list_filter = ['status', 'plan__plan_type', 'plan__tier', 'created_at', 'current_period_end']
+    search_fields = [
+        'user__email', 'user__first_name', 'user__last_name', 
+        'stripe_subscription_id', 'stripe_customer_id'
+    ]
+    readonly_fields = [
+        'created_at', 'updated_at', 'stripe_subscription_id', 
+        'stripe_customer_id'
+    ]
+    
+    fieldsets = (
+        ('User & Plan', {
+            'fields': ('user', 'plan')
+        }),
+        ('Status', {
+            'fields': ('status', 'cancelled_at')
+        }),
+        ('Billing Period', {
+            'fields': ('current_period_start', 'current_period_end')
+        }),
+        ('Stripe Information', {
+            'fields': ('stripe_subscription_id', 'stripe_customer_id'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def user_info(self, obj):
+        return format_html(
+            '<div><strong>{}</strong></div>'
+            '<div style="color: gray; font-size: 11px;">{}</div>',
+            obj.user.get_full_name() or obj.user.email.split('@')[0],
+            obj.user.email
+        )
+    user_info.short_description = 'User'
+    
+    def plan_info(self, obj):
+        return format_html(
+            '<div><strong>{}</strong></div>'
+            '<div style="color: gray; font-size: 11px;">${}/month</div>',
+            obj.plan.name,
+            obj.plan.price
+        )
+    plan_info.short_description = 'Plan'
+    
+    def status_badge(self, obj):
+        status_colors = {
+            'active': 'green',
+            'trialing': 'blue',
+            'past_due': 'orange',
+            'cancelled': 'red',
+            'inactive': 'gray'
+        }
+        color = status_colors.get(obj.status, 'gray')
+        return format_html(
+            '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px;">{}</span>',
+            color, obj.get_status_display()
+        )
+    status_badge.short_description = 'Status'
+    
+    def period_info(self, obj):
+        return format_html(
+            '<div style="font-size: 11px;">'
+            '<div>Start: {}</div>'
+            '<div>End: {}</div>'
+            '</div>',
+            obj.current_period_start.strftime('%Y-%m-%d'),
+            obj.current_period_end.strftime('%Y-%m-%d')
+        )
+    period_info.short_description = 'Billing Period'
+    
+    def days_remaining_display(self, obj):
+        if obj.is_active:
+            days = (obj.current_period_end - timezone.now()).days
+            if days > 0:
+                return format_html('<span style="color: green;">{} days</span>', days)
+            else:
+                return format_html('<span style="color: red;">Expired</span>')
+        return format_html('<span style="color: gray;">N/A</span>')
+    days_remaining_display.short_description = 'Days Left'

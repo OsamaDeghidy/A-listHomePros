@@ -126,6 +126,10 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
         end_time = data['end_time']
         service_category = data.get('service_category')
         
+        print(f"🔍 Validating appointment for alistpro: {alistpro} ({alistpro.id})")
+        print(f"🔍 Appointment date: {appointment_date}")
+        print(f"🔍 Start time: {start_time}, End time: {end_time}")
+        
         # Check if alistpro offers this service
         if service_category and not alistpro.service_categories.filter(id=service_category.id).exists():
             raise serializers.ValidationError(
@@ -145,13 +149,22 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("The professional is not available on this date")
         
         # Check if the time slot falls within the alistpro's availability
-        day_of_week = appointment_date.weekday()
+        # Convert Python weekday (0=Monday) to our model format (0=Sunday)
+        python_day_of_week = appointment_date.weekday()  # 0=Monday, 1=Tuesday..., 6=Sunday
+        day_of_week = (python_day_of_week + 1) % 7  # Convert to 0=Sunday, 1=Monday..., 6=Saturday
+        
+        print(f"🔍 Python day_of_week: {python_day_of_week}, Converted day_of_week: {day_of_week}")
+        
         available_slots = AvailabilitySlot.objects.filter(
             alistpro=alistpro,
             day_of_week=day_of_week,
             start_time__lte=start_time,
             end_time__gte=end_time
         )
+        
+        print(f"🔍 Available slots found: {available_slots.count()}")
+        for slot in available_slots:
+            print(f"   - Slot: day {slot.day_of_week}, {slot.start_time}-{slot.end_time}")
         
         if not available_slots.exists():
             raise serializers.ValidationError("The professional is not available during this time slot")
@@ -208,7 +221,9 @@ class AppointmentUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("The professional is not available on this date")
             
             # Check if the time slot falls within the alistpro's availability
-            day_of_week = appointment_date.weekday()
+            # Convert Python weekday (0=Monday) to our model format (0=Sunday)
+            python_day_of_week = appointment_date.weekday()  # 0=Monday, 1=Tuesday..., 6=Sunday
+            day_of_week = (python_day_of_week + 1) % 7  # Convert to 0=Sunday, 1=Monday..., 6=Saturday
             available_slots = AvailabilitySlot.objects.filter(
                 alistpro=alistpro,
                 day_of_week=day_of_week,

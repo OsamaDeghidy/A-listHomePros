@@ -71,10 +71,19 @@ const BookingCalendarPage = () => {
     setIsLoading(true);
     setError(null);
 
+    console.log('📅 Calendar: Current user:', currentUser);
+    console.log('📅 Calendar: User role/type:', currentUser?.role);
+
     try {
       // Fetch appointments from the API
+      console.log('📅 Calendar: About to fetch appointments using schedulingService.getAppointments()');
       const response = await schedulingService.getAppointments();
+      console.log('📅 Calendar: Raw API response:', response);
       const appointmentsData = response.data.results || [];
+
+      console.log('📅 Calendar: Fetched appointments from API:', appointmentsData);
+      console.log('📅 Calendar: Number of appointments:', appointmentsData.length);
+      console.log('📅 Calendar: First appointment:', appointmentsData[0]);
 
       // Enhance appointments with professional details
       const enhancedAppointments = await Promise.all(
@@ -101,6 +110,7 @@ const BookingCalendarPage = () => {
         })
       );
 
+      console.log('📅 Calendar: Enhanced appointments:', enhancedAppointments);
       setAppointments(enhancedAppointments);
     } catch (err) {
       console.error('Error fetching appointments:', err);

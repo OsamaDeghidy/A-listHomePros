@@ -74,6 +74,11 @@ const Header = () => {
       icon: FaDollarSign
     },
     {
+      label: language === 'ar' ? 'خطط الاشتراك' : 'Subscription Plans',
+      path: '/subscription-plans',
+      icon: FaPlus
+    },
+    {
       label: language === 'ar' ? 'كيف يعمل' : 'How it Works',
       path: '/how-it-works',
       icon: FaInfoCircle

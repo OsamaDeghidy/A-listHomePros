@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { alistProsService } from '../services/api';
+import axios from 'axios';
 import { FaList, FaMapMarked, FaFilter, FaSearch, FaUserTie } from 'react-icons/fa';
 import SearchFilters from '../components/search/SearchFilters';
 import ProsList from '../components/search/ProsList';
 import ProsMap from '../components/search/ProsMap';
 import { useLanguage } from '../hooks/useLanguage';
+import { useAuth } from '../hooks/useAuth';
 
 const SearchPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { language, isRTL } = useLanguage();
+  const { currentUser } = useAuth();
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -226,8 +229,88 @@ const SearchPage = () => {
 
   // Handle pro click on map
   const handleProClick = (pro) => {
-    console.log('Pro clicked:', pro);
-    // Implement any additional functionality when a pro marker is clicked
+    console.log('Professional clicked:', pro);
+    // Navigate to professional detail page
+    navigate(`/professionals/${pro.id || pro.user_id}`);
+  };
+
+  // NEW: Handle direct booking
+  const handleDirectBooking = async (professional) => {
+    if (!currentUser || currentUser.role !== 'client') {
+      navigate('/login?redirect=' + encodeURIComponent(window.location.pathname));
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const bookingData = {
+        title: 'Direct Service Booking',
+        description: 'Service booking made directly from search',
+        service_category: professional.service_category || null,
+        urgency: 'medium',
+        location: searchResults.location || ''
+      };
+
+      const API_URL = 'http://127.0.0.1:8000/api';
+      const token = localStorage.getItem('token');
+      
+      const response = await axios.post(
+        `${API_URL}/alistpros/professionals/${professional.id}/book-service/`,
+        bookingData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data) {
+        const conversationId = response.data.conversation_id;
+        
+        // Show success message
+        alert(`تم حجز الخدمة بنجاح! سيتم توجيهك إلى المحادثات. Conversation ID: ${conversationId}`);
+        
+        console.log('Redirecting to conversation:', conversationId);
+        console.log('Current user role:', currentUser?.role);
+        
+        // Wait a moment then navigate
+        setTimeout(() => {
+          // Navigate to dashboard first, then to specific conversation
+          if (currentUser?.role === 'client') {
+            console.log('Navigating as client to:', `/dashboard/messages/${conversationId}`);
+            navigate(`/dashboard/messages/${conversationId}`, {
+              state: { 
+                message: 'Service booked successfully! Start discussing details with the professional.',
+                type: 'success'
+              }
+            });
+          } else {
+            console.log('Navigating to general messages page');
+            // Fallback to general messages page
+            navigate('/dashboard/messages', {
+              state: { 
+                message: 'Service booked successfully! Check your messages.',
+                type: 'success'
+              }
+            });
+          }
+        }, 1000); // Wait 1 second before redirecting
+      }
+    } catch (error) {
+      console.error('Error booking service:', error);
+      let errorMessage = 'Failed to book service. Please try again.';
+      
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -382,7 +465,10 @@ const SearchPage = () => {
               
               {/* Conditional rendering based on view mode */}
               {viewMode === 'list' ? (
-                <ProsList pros={searchResults} />
+                <ProsList 
+                  pros={searchResults} 
+                  onDirectBooking={handleDirectBooking}
+                />
               ) : (
                 <ProsMap pros={searchResults} onProClick={handleProClick} />
               )}

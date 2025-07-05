@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FaStar, FaMapMarkerAlt, FaPhone, FaCalendarAlt, FaSearch, FaTags, FaDollarSign } from 'react-icons/fa';
+import { FaStar, FaMapMarkerAlt, FaPhone, FaCalendarAlt, FaSearch, FaTags, FaDollarSign, FaComment, FaHandshake } from 'react-icons/fa';
 import { useLanguage } from '../../hooks/useLanguage';
 import { useAuth } from '../../hooks/useAuth';
 
-const ProsList = ({ pros = [] }) => {
+const ProsList = ({ pros = [], onDirectBooking }) => {
   const { language, isRTL } = useLanguage();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, currentUser } = useAuth();
   const navigate = useNavigate();
   const [view, setView] = useState('list'); // 'list' or 'grid'
   const [sortBy, setSortBy] = useState('rating'); // 'rating', 'reviews', or 'name'
@@ -377,6 +377,18 @@ const ProsList = ({ pros = [] }) => {
                     >
                       {language === 'ar' ? 'عرض الملف الشخصي' : 'View Profile'}
                     </button>
+                    
+                    {/* NEW: Direct Booking Button */}
+                    {isAuthenticated && currentUser?.role === 'client' && onDirectBooking && (
+                      <button 
+                        onClick={() => onDirectBooking(pro)} 
+                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 flex items-center"
+                      >
+                        <FaHandshake className="mr-2" />
+                        {language === 'ar' ? 'حجز فوري' : 'Book Now'}
+                      </button>
+                    )}
+                    
                     <button 
                       onClick={() => {
                         if (isAuthenticated) {
@@ -385,10 +397,12 @@ const ProsList = ({ pros = [] }) => {
                           navigate(`/login?redirect=/booking/${pro.id}`);
                         }
                       }} 
-                      className="px-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition duration-300"
+                      className="px-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 transition duration-300 flex items-center"
                     >
-                      {language === 'ar' ? 'احجز الآن' : 'Book Now'}
+                      <FaComment className="mr-2" />
+                      {language === 'ar' ? 'مناقشة أولاً' : 'Discuss First'}
                     </button>
+                    
                     <a 
                       href={`tel:+123456789`} 
                       className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition duration-300 flex items-center"
@@ -483,7 +497,19 @@ const ProsList = ({ pros = [] }) => {
                   {getProDescription(pro)}
                 </p>
                 
-                <div className="mt-4 flex space-x-2">
+                <div className="mt-4 flex flex-col space-y-2">
+                  {/* Direct Booking - Priority button for clients */}
+                  {isAuthenticated && currentUser?.role === 'client' && onDirectBooking && (
+                    <button 
+                      onClick={() => onDirectBooking(pro)} 
+                      className="w-full px-3 py-2 text-center text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 flex items-center justify-center"
+                    >
+                      <FaHandshake className="mr-1" />
+                      {language === 'ar' ? 'حجز فوري' : 'Book Now'}
+                    </button>
+                  )}
+                  
+                  <div className="flex space-x-2">
                   <button 
                     onClick={() => {
                       if (isAuthenticated) {
@@ -508,6 +534,7 @@ const ProsList = ({ pros = [] }) => {
                   >
                     {language === 'ar' ? 'احجز' : 'Book'}
                   </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

@@ -110,6 +110,104 @@ class PaymentService {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
+
+  // ========== NEW MILESTONE PAYMENT METHODS ==========
+
+  /**
+   * دفع milestone محدد
+   * Pay specific milestone
+   * @param {string} token - رمز المصادقة
+   * @param {number} milestoneId - معرف الـ milestone
+   * @param {Object} paymentData - بيانات الدفع
+   * @returns {Promise}
+   */
+  payMilestone(token, milestoneId, paymentData = {}) {
+    return axios.post(`${API_URL}/payments/milestones/${milestoneId}/pay/`, paymentData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * تأكيد دفع milestone
+   * Confirm milestone payment
+   * @param {string} token - رمز المصادقة
+   * @param {number} milestoneId - معرف الـ milestone
+   * @param {Object} confirmationData - بيانات التأكيد
+   * @returns {Promise}
+   */
+  confirmMilestonePayment(token, milestoneId, confirmationData = {}) {
+    return axios.post(`${API_URL}/payments/milestones/${milestoneId}/confirm-payment/`, confirmationData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * تحديد milestone كمكتمل
+   * Mark milestone as completed
+   * @param {string} token - رمز المصادقة
+   * @param {number} milestoneId - معرف الـ milestone
+   * @param {Object} completionData - بيانات الإكمال
+   * @returns {Promise}
+   */
+  markMilestoneCompleted(token, milestoneId, completionData = {}) {
+    return axios.post(`${API_URL}/payments/milestones/${milestoneId}/mark-completed/`, completionData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * موافقة العميل على milestone
+   * Client approval for milestone
+   * @param {string} token - رمز المصادقة
+   * @param {number} milestoneId - معرف الـ milestone
+   * @param {Object} approvalData - بيانات الموافقة
+   * @returns {Promise}
+   */
+  approveMilestone(token, milestoneId, approvalData = {}) {
+    return axios.post(`${API_URL}/payments/milestones/${milestoneId}/approve/`, approvalData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * الحصول على milestones لـ escrow معين
+   * Get milestones for specific escrow
+   * @param {string} token - رمز المصادقة
+   * @param {number} escrowId - معرف الـ escrow
+   * @returns {Promise}
+   */
+  getEscrowMilestones(token, escrowId) {
+    return axios.get(`${API_URL}/payments/escrow/${escrowId}/milestones/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * الحصول على ملخص الدفع لـ quote
+   * Get payment summary for quote
+   * @param {string} token - رمز المصادقة
+   * @param {number} quoteId - معرف الـ quote
+   * @returns {Promise}
+   */
+  getPaymentSummary(token, quoteId) {
+    return axios.get(`${API_URL}/payments/quotes/${quoteId}/payment-summary/`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  /**
+   * إنشاء escrow account من quote
+   * Create escrow account from quote
+   * @param {string} token - رمز المصادقة
+   * @param {number} quoteId - معرف الـ quote
+   * @param {Object} escrowData - بيانات الـ escrow
+   * @returns {Promise}
+   */
+  createEscrowFromQuote(token, quoteId, escrowData = {}) {
+    return axios.post(`${API_URL}/alistpros_profiles/quotes/${quoteId}/create-escrow/`, escrowData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
 }
 
 export default new PaymentService(); 

@@ -28,6 +28,15 @@ urlpatterns = [
     path('jobs/', views.JobAssignmentListView.as_view(), name='job-assignment-list'),
     path('jobs/<int:pk>/', views.JobAssignmentDetailView.as_view(), name='job-assignment-detail'),
     
+    # NEW APIs for Updated Workflow
+    path('requests/create-with-conversation/', views.create_service_request_with_conversation, name='create-service-request-conversation'),
+    path('appointments/schedule-from-conversation/', views.schedule_appointment_from_conversation, name='schedule-appointment-conversation'),
+    path('quotes/create-with-installments/', views.create_quote_with_installments, name='create-quote-installments'),
+    
+    # NEW APIs for Direct Booking and Escrow Creation
+    path('professionals/<int:professional_id>/book-service/', views.book_service_directly, name='book-service-directly'),
+    path('quotes/<int:quote_id>/create-escrow/', views.create_escrow_from_quote, name='create-escrow-from-quote'),
+    
     # AListHomePro Legacy URLs
     path('alist-home-pros/', views.AListHomeProProfileListView.as_view(), name='alist-home-pro-list'),
     path('alist-home-pros/<int:pk>/', views.AListHomeProProfileDetailView.as_view(), name='alist-home-pro-detail'),

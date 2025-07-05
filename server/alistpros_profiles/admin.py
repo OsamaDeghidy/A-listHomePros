@@ -125,13 +125,13 @@ class ServiceRequestAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'title', 'client_name', 'professional_name', 'service_category',
         'status', 'urgency', 'budget_range', 'is_public', 'flexible_schedule',
-        'preferred_date', 'created_at'
+        'conversation_link', 'is_appointment_scheduled', 'preferred_date', 'created_at'
     ]
     list_filter = ['status', 'urgency', 'service_category', 'is_public', 
-                  'flexible_schedule', 'created_at', 'preferred_date']
+                  'flexible_schedule', 'is_appointment_scheduled', 'created_at', 'preferred_date']
     search_fields = ['title', 'description', 'client__name', 'client__email',
                     'service_address__street_address', 'service_address__city']
-    readonly_fields = ['created_at', 'updated_at', 'images_preview']
+    readonly_fields = ['created_at', 'updated_at', 'images_preview', 'conversation_link']
     list_editable = ['status', 'is_public']
     
     fieldsets = (
@@ -147,6 +147,12 @@ class ServiceRequestAdmin(admin.ModelAdmin):
         }),
         ('Status & Management', {
             'fields': ('status', 'is_public')
+        }),
+        ('Conversation & Appointment - NEW FIELDS', {
+            'fields': ('conversation', 'conversation_link', 'is_appointment_scheduled', 
+                      'appointment_scheduled_at'),
+            'classes': ('collapse',),
+            'description': 'الحقول الجديدة للمحادثة والمواعيد - New fields for conversation and appointments'
         }),
         ('Images', {
             'fields': ('images', 'images_preview'),
@@ -188,6 +194,16 @@ class ServiceRequestAdmin(admin.ModelAdmin):
             return mark_safe(''.join(previews))
         return "No Images"
     images_preview.short_description = 'Images Preview'
+    
+    def conversation_link(self, obj):
+        """رابط للمحادثة المرتبطة بطلب الخدمة"""
+        if obj.conversation:
+            # Create admin URL for the conversation
+            url = reverse('admin:messaging_conversation_change', args=[obj.conversation.id])
+            return format_html('<a href="{}" target="_blank">💬 View Conversation ({})</a>', 
+                              url, obj.conversation.title)
+        return "❌ No Conversation"
+    conversation_link.short_description = 'المحادثة | Conversation'
 
 
 @admin.register(AListHomeProReview)
@@ -236,16 +252,16 @@ class AListHomeProReviewAdmin(admin.ModelAdmin):
 class ServiceQuoteAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'service_request_title', 'professional_name', 'total_price', 
-        'status_badge', 'status', 'materials_included', 'warranty_period',
-        'start_date', 'completion_date', 'expires_at', 'created_at'
+        'supports_installments', 'installment_breakdown', 'status_badge', 'status', 
+        'materials_included', 'warranty_period', 'start_date', 'completion_date', 'expires_at', 'created_at'
     ]
-    list_filter = ['status', 'materials_included', 'created_at', 'start_date', 'expires_at']
+    list_filter = ['status', 'supports_installments', 'materials_included', 'created_at', 'start_date', 'expires_at']
     search_fields = [
         'title', 'description', 'professional__name', 'professional__email',
         'service_request__title', 'service_request__client__name',
         'terms_and_conditions', 'warranty_period'
     ]
-    readonly_fields = ['created_at', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at', 'installment_breakdown', 'installments_summary']
     list_editable = ['status']
     ordering = ['-created_at']
     
@@ -258,6 +274,13 @@ class ServiceQuoteAdmin(admin.ModelAdmin):
         }),
         ('📅 Timeline', {
             'fields': ('estimated_duration', 'start_date', 'completion_date')
+        }),
+        ('💳 Installment Payment Support - NEW FIELDS', {
+            'fields': ('supports_installments', 'first_payment_percentage', 
+                      'first_payment_amount', 'second_payment_amount', 
+                      'installment_breakdown', 'installments_summary'),
+            'classes': ('collapse',),
+            'description': 'نظام الدفع المقسط الجديد - New installment payment system'
         }),
         ('📋 Terms & Conditions', {
             'fields': ('terms_and_conditions', 'warranty_period'),
@@ -293,6 +316,60 @@ class ServiceQuoteAdmin(admin.ModelAdmin):
             color, obj.get_status_display()
         )
     status_badge.short_description = 'Status'
+    
+    def installment_breakdown(self, obj):
+        """عرض تفاصيل الدفع المقسط"""
+        if not obj.supports_installments:
+            return "❌ Installments not supported"
+        
+        return format_html(
+            '''
+            <div style="font-size: 12px;">
+                <strong>💰 Total: ${}</strong><br/>
+                <span style="color: #28a745;">🥇 First Payment: ${} ({}%)</span><br/>
+                <span style="color: #007bff;">🥈 Second Payment: ${}</span>
+            </div>
+            ''',
+            obj.total_price,
+            obj.first_payment_amount or 0,
+            obj.first_payment_percentage,
+            obj.second_payment_amount or 0
+        )
+    installment_breakdown.short_description = 'تفصيل الدفع | Installments'
+    
+    def installments_summary(self, obj):
+        """ملخص حالة الدفعات"""
+        if not obj.supports_installments:
+            return "❌ No installments"
+        
+        try:
+            # Get installment records from payments app
+            from payments.models import PaymentInstallment
+            installments = PaymentInstallment.objects.filter(quote=obj)
+            
+            if not installments.exists():
+                return "⏳ Installments not created yet"
+            
+            summary = []
+            for installment in installments.order_by('installment_type'):
+                status_emoji = {
+                    'pending': '⏳',
+                    'paid': '💳',
+                    'held': '🔒',
+                    'released': '✅',
+                    'refunded': '↩️',
+                    'disputed': '⚠️'
+                }
+                
+                emoji = status_emoji.get(installment.status, '❓')
+                summary.append(f"{emoji} {installment.get_installment_type_display()}: {installment.get_status_display()}")
+            
+            return format_html('<br/>'.join(summary))
+            
+        except Exception as e:
+            return f"Error loading installments: {str(e)}"
+            
+    installments_summary.short_description = 'حالة الدفعات | Payment Status'
 
 
 @admin.register(JobAssignment)

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Payment, StripeAccount, EscrowAccount, EscrowMilestone, EscrowTransaction, EscrowWorkOrder
+from .models import StripeAccount, EscrowAccount, EscrowMilestone, EscrowTransaction, EscrowWorkOrder, SubscriptionPlan, UserSubscription, SubscriptionInvoice, ProjectCommission
 from users.serializers import UserSerializer
 from users.models import CustomUser as User
 from alistpros_profiles.serializers import AListHomeProProfileSerializer
@@ -25,44 +25,7 @@ class StripeAccountSerializer(serializers.ModelSerializer):
         )
 
 
-class PaymentSerializer(serializers.ModelSerializer):
-    """
-    Serializer for payments
-    """
-    client = UserSerializer(read_only=True)
-    contractor = AListHomeProProfileSerializer(read_only=True)
-    
-    class Meta:
-        model = Payment
-        fields = (
-            'id', 'client', 'contractor', 'amount', 'description',
-            'status', 'stripe_payment_intent_id', 'stripe_transfer_id',
-            'completed_at', 'created_at', 'updated_at'
-        )
-        read_only_fields = (
-            'id', 'client', 'contractor', 'stripe_payment_intent_id',
-            'stripe_transfer_id', 'completed_at', 'created_at', 'updated_at'
-        )
-
-
-class PaymentCreateSerializer(serializers.ModelSerializer):
-    """
-    Serializer for creating payments
-    """
-    contractor_id = serializers.IntegerField(write_only=True)
-    client_secret = serializers.CharField(read_only=True)
-    
-    class Meta:
-        model = Payment
-        fields = ('contractor_id', 'amount', 'description', 'client_secret')
-    
-    def validate_amount(self, value):
-        """
-        Validate the payment amount
-        """
-        if value <= 0:
-            raise serializers.ValidationError("Amount must be greater than zero")
-        return value
+# Payment serializers removed - replaced by EscrowAccount system
 
 
 class EscrowAccountSerializer(serializers.ModelSerializer):
@@ -182,3 +145,161 @@ class CrewJobInvitationSerializer(serializers.ModelSerializer):
     
     def get_is_escrow_funded(self, obj):
         return obj.escrow.status in ['funded', 'in_progress', 'pending_approval']
+
+
+# PaymentInstallment serializers removed - replaced by EscrowMilestone system
+
+
+class PaymentSummarySerializer(serializers.Serializer):
+    """
+    Serializer لملخص الدفعات
+    Serializer for payment summary
+    """
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_paid = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_pending = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_held = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_released = serializers.DecimalField(max_digits=10, decimal_places=2)
+    platform_fees_total = serializers.DecimalField(max_digits=10, decimal_places=2)
+    installments_count = serializers.IntegerField()
+    
+    first_payment_status = serializers.CharField()
+    second_payment_status = serializers.CharField()
+    
+    next_release_date = serializers.DateTimeField(allow_null=True)
+    days_until_next_release = serializers.IntegerField(allow_null=True)
+
+
+class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    """Serializer for subscription plans"""
+    plan_type_display = serializers.CharField(source='get_plan_type_display', read_only=True)
+    tier_display = serializers.CharField(source='get_tier_display', read_only=True)
+    project_fee_rate = serializers.SerializerMethodField()
+    feature_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SubscriptionPlan
+        fields = [
+            'id', 'name', 'plan_type', 'plan_type_display', 'tier', 'tier_display',
+            'price', 'description', 'features', 'feature_count', 'project_fee_rate',
+            'is_active', 'stripe_price_id', 'stripe_product_id', 'created_at'
+        ]
+    
+    def get_project_fee_rate(self, obj):
+        """Get project fee rate from subscription plans config"""
+        from .subscription_plans import SUBSCRIPTION_PLANS
+        plan_key = f"{obj.plan_type}_{obj.tier}"
+        plan_config = SUBSCRIPTION_PLANS.get(plan_key, {})
+        return float(plan_config.get('project_fee_rate', 0))
+    
+    def get_feature_count(self, obj):
+        """Get number of features in this plan"""
+        return len(obj.features) if obj.features else 0
+
+
+class UserSubscriptionSerializer(serializers.ModelSerializer):
+    """Serializer for user subscriptions"""
+    plan = SubscriptionPlanSerializer(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    has_premium_access = serializers.BooleanField(read_only=True)
+    days_remaining = serializers.SerializerMethodField()
+    project_fee_rate = serializers.SerializerMethodField()
+    user_features = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserSubscription
+        fields = [
+            'id', 'plan', 'status', 'status_display', 'is_active', 'has_premium_access',
+            'current_period_start', 'current_period_end', 'days_remaining', 
+            'project_fee_rate', 'user_features', 'created_at'
+        ]
+    
+    def get_days_remaining(self, obj):
+        if obj.current_period_end:
+            from django.utils import timezone
+            remaining = obj.current_period_end - timezone.now()
+            return max(0, remaining.days)
+        return 0
+    
+    def get_project_fee_rate(self, obj):
+        """Get project fee rate for this subscription"""
+        from .subscription_plans import SUBSCRIPTION_PLANS
+        plan_key = f"{obj.plan.plan_type}_{obj.plan.tier}"
+        plan_config = SUBSCRIPTION_PLANS.get(plan_key, {})
+        return float(plan_config.get('project_fee_rate', 0))
+    
+    def get_user_features(self, obj):
+        """Get all features available to this user"""
+        from .feature_access import FeatureAccessService
+        return FeatureAccessService.get_user_features(obj.user)
+
+
+class FeatureAccessSerializer(serializers.Serializer):
+    """Serializer for checking feature access"""
+    feature_key = serializers.CharField()
+    has_access = serializers.BooleanField(read_only=True)
+    plan_required = serializers.CharField(read_only=True, required=False)
+    upgrade_suggestions = serializers.ListField(read_only=True, required=False)
+
+
+class UserPlanInfoSerializer(serializers.Serializer):
+    """Serializer for user plan information"""
+    has_subscription = serializers.BooleanField()
+    is_active = serializers.BooleanField()
+    plan_name = serializers.CharField(allow_null=True)
+    plan_type = serializers.CharField(allow_null=True)
+    tier = serializers.CharField(allow_null=True)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
+    features = serializers.ListField(child=serializers.CharField())
+    project_fee_rate = serializers.DecimalField(max_digits=5, decimal_places=2)
+    current_period_end = serializers.DateTimeField(allow_null=True)
+    days_remaining = serializers.IntegerField(required=False)
+
+
+class SubscriptionInvoiceSerializer(serializers.ModelSerializer):
+    """Serializer for subscription invoices"""
+    
+    class Meta:
+        model = SubscriptionInvoice
+        fields = [
+            'id', 'stripe_invoice_id', 'amount_paid', 'currency', 'status',
+            'invoice_pdf', 'created_at', 'paid_at'
+        ]
+
+
+class ProjectCommissionSerializer(serializers.ModelSerializer):
+    """Serializer for project commissions"""
+    
+    class Meta:
+        model = ProjectCommission
+        fields = [
+            'id', 'project_value', 'commission_rate', 'commission_amount',
+            'status', 'created_at', 'paid_at'
+        ]
+
+
+class CreateSubscriptionSerializer(serializers.Serializer):
+    """Serializer for creating Stripe subscriptions"""
+    plan_id = serializers.IntegerField()
+    success_url = serializers.URLField()
+    cancel_url = serializers.URLField()
+    
+    def validate_plan_id(self, value):
+        try:
+            plan = SubscriptionPlan.objects.get(id=value, is_active=True)
+            return value
+        except SubscriptionPlan.DoesNotExist:
+            raise serializers.ValidationError("Invalid or inactive subscription plan")
+
+
+class ChangeSubscriptionSerializer(serializers.Serializer):
+    """Serializer for changing subscription plans"""
+    new_plan_id = serializers.IntegerField()
+    
+    def validate_new_plan_id(self, value):
+        try:
+            plan = SubscriptionPlan.objects.get(id=value, is_active=True)
+            return value
+        except SubscriptionPlan.DoesNotExist:
+            raise serializers.ValidationError("Invalid or inactive subscription plan")

@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 // تكوين الإعدادات الأساسية للـ API
-//const API_URL = 'http://127.0.0.1:8000/api';
-const API_URL = 'https://alisthomepros.com/api';
+const API_URL = 'http://127.0.0.1:8000/api';
+//const API_URL = 'https://alisthomepros.com/api';
 
 const api = axios.create({
   baseURL: API_URL,

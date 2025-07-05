@@ -239,3 +239,54 @@ USER_ROLES = [
     'specialist',  # الأخصائي المعتمد
     'admin'        # المدير
 ]
+
+# Swagger settings
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'JWT token format: Bearer <token>'
+        }
+    },
+    'USE_SESSION_AUTH': False,
+    'JSON_EDITOR': True,
+    'SUPPORTED_SUBMIT_METHODS': [
+        'get',
+        'post',
+        'put',
+        'delete',
+        'patch'
+    ],
+    'OPERATIONS_SORTER': 'alpha',
+    'TAGS_SORTER': 'alpha',
+    'DOC_EXPANSION': 'none',
+    'DEEP_LINKING': True,
+    'SHOW_EXTENSIONS': True,
+    'DEFAULT_MODEL_RENDERING': 'model',
+    'VALIDATOR_URL': None,
+}
+
+REDOC_SETTINGS = {
+    'LAZY_RENDERING': False,
+    'HIDE_HOSTNAME': False,
+    'EXPAND_RESPONSES': ['200', '201'],
+    'PATH_IN_MIDDLE': True,
+    'NATIVE_SCROLLBARS': True,
+    'THEME': {
+        'colors': {
+            'primary': {
+                'main': '#1976d2'
+            }
+        },
+        'typography': {
+            'fontSize': '14px',
+            'lineHeight': '1.5em',
+            'code': {
+                'fontSize': '13px',
+                'fontFamily': 'Courier, monospace'
+            }
+        }
+    }
+}

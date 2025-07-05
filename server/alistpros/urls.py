@@ -16,6 +16,7 @@ from rest_framework_simplejwt.views import (
 # Import Swagger and OpenAPI dependencies
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from .swagger_info import swagger_info
 
 # Import viewsets
 from users.views import RegisterView, CustomTokenObtainPairView, UserProfileView
@@ -47,14 +48,7 @@ router.register(r'notifications/settings', NotificationSettingViewSet, basename=
 
 # Swagger/OpenAPI configuration
 schema_view = get_schema_view(
-    openapi.Info(
-        title="A-List Home Pros API",
-        default_version='v1',
-        description="API for A-List Home Pros - connecting homeowners with qualified alist pros",
-        terms_of_service="https://www.alistpros.com/terms/",
-        contact=openapi.Contact(email="osamaeldeghadey@gmail.com"),
-        license=openapi.License(name="Proprietary License"),
-    ),
+    swagger_info,
     public=True,
     permission_classes=(permissions.AllowAny,),
 )

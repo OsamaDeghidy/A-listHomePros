@@ -6,6 +6,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useLanguage } from '../hooks/useLanguage';
 import messageService from '../services/messageService';
 import { alistProsService } from '../services/api';
+import InstallmentQuoteModal from '../components/modals/InstallmentQuoteModal';
+import PaymentMilestones from '../components/payments/PaymentMilestones';
 import { 
   FaInbox, 
   FaUserCircle, 
@@ -83,6 +85,7 @@ const MessagesPage = () => {
   const [participantsInfo, setParticipantsInfo] = useState({});
   const [refreshing, setRefreshing] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
+  const [showInstallmentQuoteModal, setShowInstallmentQuoteModal] = useState(false);
   
   // Enhanced states for new features
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -100,6 +103,8 @@ const MessagesPage = () => {
 
   // Service Request states
   const [showServiceRequestModal, setShowServiceRequestModal] = useState(false);
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [showClientActionsMenu, setShowClientActionsMenu] = useState(false);
   const [serviceRequestData, setServiceRequestData] = useState({
     title: '',
     description: '',
@@ -107,7 +112,18 @@ const MessagesPage = () => {
     urgency: 'medium',
     flexible_schedule: true
   });
+  const [appointmentData, setAppointmentData] = useState({
+    date: '',
+    time: '',
+    description: '',
+    address: '',
+    professionalId: null,
+    selectedSlot: null
+  });
   const [creatingServiceRequest, setCreatingServiceRequest] = useState(false);
+  const [creatingAppointment, setCreatingAppointment] = useState(false);
+  const [availabilitySlots, setAvailabilitySlots] = useState([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
 
   // Refs
   const messageEndRef = useRef(null);
@@ -123,6 +139,28 @@ const MessagesPage = () => {
 
   // Check if current user is a professional
   const isProfessional = currentUser?.role === 'contractor' || currentUser?.role === 'specialist' || currentUser?.role === 'crew';
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showClientActionsMenu && !event.target.closest('.client-actions-menu')) {
+        setShowClientActionsMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showClientActionsMenu]);
+
+  // Fetch availability when appointment modal opens
+  useEffect(() => {
+    if (showAppointmentModal && appointmentData.professionalId) {
+      console.log('📅 Fetching availability for professional:', appointmentData.professionalId);
+      fetchAvailabilitySlots(appointmentData.professionalId);
+    }
+  }, [showAppointmentModal, appointmentData.professionalId]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -1035,7 +1073,9 @@ const MessagesPage = () => {
         phone: participant.phone_number,
         email: participant.email,
         location: null,
-        userId: participant.id || participant.user_id
+        userId: participant.id || participant.user_id,
+        professionalId: participant.alistpro_id || participant.professional_id,
+        alistpro_id: participant.alistpro_id
       };
     }
     
@@ -1059,6 +1099,9 @@ const MessagesPage = () => {
       console.log('🔍 DEBUG: participantInfo from state:', participantInfo);
       
     if (participantInfo) {
+      console.log('🔍 ParticipantInfo object:', participantInfo);
+      console.log('🔍 ParticipantInfo keys:', Object.keys(participantInfo));
+      
       return {
         name: participantInfo.business_name || 
               participantInfo.user?.name ||
@@ -1073,7 +1116,9 @@ const MessagesPage = () => {
           phone: participantInfo.user?.phone_number || participantInfo.phone_number || otherParticipant.phone_number,
           email: participantInfo.user?.email || otherParticipant.email,
           location: participantInfo.business_address || participantInfo.location,
-          userId: otherParticipant.id
+          userId: otherParticipant.id,
+          professionalId: participantInfo.id || participantInfo.alistpro_id || participantInfo.profile_id, // Add professional profile ID
+          alistpro_id: participantInfo.id || participantInfo.alistpro_id || participantInfo.profile_id
       };
     }
     
@@ -1090,7 +1135,9 @@ const MessagesPage = () => {
       phone: otherParticipant.phone_number,
         email: otherParticipant.email,
         location: null,
-        userId: otherParticipant.id
+        userId: otherParticipant.id,
+        professionalId: otherParticipant.alistpro_id || otherParticipant.professional_id,
+        alistpro_id: otherParticipant.alistpro_id
       };
     }
     
@@ -1150,6 +1197,68 @@ const MessagesPage = () => {
         conversationId: activeConversation.id
       }
     });
+  };
+
+  // NEW: Handle creating quote with installments directly in chat
+  const handleCreateQuoteWithInstallments = async (quoteData) => {
+    try {
+      setCreatingServiceRequest(true);
+      const token = localStorage.getItem('token');
+      
+      const participantDetails = getParticipantDetails(activeConversation);
+      if (!participantDetails || !participantDetails.userId) {
+        throw new Error('Cannot identify client for quote');
+      }
+      
+      const response = await fetch(`/api/alistpros_profiles/quotes/create-with-installments/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...quoteData,
+          client_id: participantDetails.userId,
+          conversation_id: activeConversation.id
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Show success message in chat
+        const successMessage = {
+          id: 'quote_success_' + Date.now(),
+          content: language === 'ar' 
+            ? `✅ تم إنشاء عرض الأسعار بنجاح!\n💰 المبلغ الإجمالي: $${result.quote.total_price}\n📊 نظام دفع مقسط: 50% + 50%\n🏦 معرف الحساب المضمون: ${result.escrow_id}\n\n🔄 يمكن للعميل الآن دفع الدفعة الأولى لبدء العمل.`
+            : `✅ Quote created successfully!\n💰 Total Amount: $${result.quote.total_price}\n📊 Installment Payment: 50% + 50%\n🏦 Escrow Account ID: ${result.escrow_id}\n\n🔄 Client can now pay the first installment to start work.`,
+          sender: { id: currentUser.id, name: currentUser.name },
+          created_at: new Date().toISOString(),
+          message_type: 'system',
+          is_quote: true,
+          quote_data: result.quote,
+          escrow_id: result.escrow_id
+        };
+
+        setMessages(prev => [...prev, successMessage]);
+        setShowQuoteModal(false);
+
+        // Send actual system message to backend
+        await messageService.sendMessage(token, activeConversation.id, {
+          content: successMessage.content,
+          message_type: 'SYSTEM'
+        });
+
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create quote');
+      }
+    } catch (error) {
+      console.error('Error creating quote with installments:', error);
+      alert((language === 'ar' ? 'فشل في إنشاء عرض الأسعار: ' : 'Failed to create quote: ') + error.message);
+    } finally {
+      setCreatingServiceRequest(false);
+    }
   };
 
   // Handle service request creation
@@ -1285,6 +1394,334 @@ const MessagesPage = () => {
     setServiceRequestData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  // Handle appointment booking
+  const handleBookAppointment = () => {
+    console.log('🗓️ Starting appointment booking...');
+    
+    if (!activeConversation) {
+      console.error('❌ No active conversation');
+      alert(isArabic ? 'لا توجد محادثة نشطة' : 'No active conversation');
+      return;
+    }
+    
+    const participantDetails = getParticipantDetails(activeConversation);
+    if (!participantDetails) {
+      console.error('❌ Could not get professional details');
+      alert(isArabic ? 'خطأ في الحصول على بيانات مقدم الخدمة' : 'Error getting professional details');
+      return;
+    }
+    
+    // Get professional ID - try multiple ways to get it
+    let professionalId = null;
+    console.log('🔍 Participant details for professional ID detection:', participantDetails);
+    
+    if (participantDetails.professionalId) {
+      professionalId = participantDetails.professionalId;
+      console.log('✅ Using professionalId:', professionalId);
+    } else if (participantDetails.alistpro_id) {
+      professionalId = participantDetails.alistpro_id;
+      console.log('✅ Using alistpro_id:', professionalId);
+    } else if (participantDetails.userId) {
+      professionalId = participantDetails.userId;
+      console.log('⚠️ Using userId as fallback:', professionalId);
+    }
+    
+    console.log('🔍 Final Professional ID for appointment:', professionalId);
+    
+    setAppointmentData(prev => ({
+      ...prev,
+      description: isArabic ? `موعد مع ${participantDetails.name}` : `Appointment with ${participantDetails.name}`,
+      professionalId: professionalId
+    }));
+    setShowAppointmentModal(true);
+    setShowClientActionsMenu(false);
+  };
+
+  // Try to find professional profile ID from user ID
+  const findProfessionalProfileId = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://127.0.0.1:8000/api/alistpros-profiles/profiles/?user=${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.results && data.results.length > 0) {
+          console.log('✅ Found professional profile:', data.results[0]);
+          return data.results[0].id;
+        }
+      }
+    } catch (error) {
+      console.error('Error finding professional profile:', error);
+    }
+    return null;
+  };
+
+  // Fetch availability slots for professional
+  const fetchAvailabilitySlots = async (professionalId) => {
+    console.log('🚀 fetchAvailabilitySlots called with professionalId:', professionalId);
+    
+    if (!professionalId) {
+      console.error('❌ No professionalId provided');
+      return;
+    }
+    
+    setLoadingAvailability(true);
+    let finalProfessionalId = professionalId;
+    
+    try {
+      const token = localStorage.getItem('token');
+      let url = `http://127.0.0.1:8000/api/scheduling/availability-slots/for_professional/?alistpro=${professionalId}`;
+      console.log('📡 Fetching availability from URL:', url);
+      
+      let response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('📡 Response status:', response.status);
+      
+      // If 404 or no results, try to find the professional profile ID
+      if (!response.ok || response.status === 404) {
+        console.log('🔍 First attempt failed, trying to find professional profile ID...');
+        const profileId = await findProfessionalProfileId(professionalId);
+        
+        if (profileId) {
+          finalProfessionalId = profileId;
+          url = `http://127.0.0.1:8000/api/scheduling/availability-slots/for_professional/?alistpro=${profileId}`;
+          console.log('📡 Retrying with profile ID:', profileId, 'URL:', url);
+          
+          response = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+        }
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('📅 Availability slots fetched:', data);
+        console.log('📅 Number of slots:', data.results ? data.results.length : 0);
+        
+        if (data.results && data.results.length > 0) {
+          console.log('✅ Found availability slots:', data.results);
+          setAvailabilitySlots(data.results);
+        } else {
+          console.log('⚠️ No availability slots found');
+          setAvailabilitySlots([]);
+        }
+      } else {
+        const errorData = await response.text();
+        console.error('❌ Failed to fetch availability slots. Status:', response.status);
+        console.error('❌ Error response:', errorData);
+        setAvailabilitySlots([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching availability slots:', error);
+      setAvailabilitySlots([]);
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  // Handle time slot selection from availability calendar
+  const handleTimeSlotSelected = (selectedSlot) => {
+    console.log('🕐 Time slot selected:', selectedSlot);
+    setAppointmentData(prev => ({
+      ...prev,
+      date: selectedSlot.formattedDate,
+      time: selectedSlot.formattedTime,
+      selectedSlot: selectedSlot
+    }));
+  };
+
+  // Generate available dates from availability slots
+  const getAvailableDates = () => {
+    if (availabilitySlots.length === 0) return [];
+    
+    const dates = [];
+    const today = new Date();
+    
+    // Generate next 30 days and check availability
+    for (let i = 1; i <= 30; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, etc.
+      
+      // Check if professional is available on this day
+      const hasAvailability = availabilitySlots.some(slot => slot.day_of_week === dayOfWeek);
+      
+      if (hasAvailability) {
+        dates.push({
+          date: date.toISOString().split('T')[0],
+          dayName: date.toLocaleDateString(isArabic ? 'ar' : 'en', { weekday: 'short' }),
+          day: date.getDate(),
+          month: date.toLocaleDateString(isArabic ? 'ar' : 'en', { month: 'short' })
+        });
+      }
+    }
+    
+    return dates.slice(0, 14); // Limit to 14 available dates
+  };
+
+  // Get available times for selected date
+  const getAvailableTimesForDate = (selectedDate) => {
+    if (!selectedDate || availabilitySlots.length === 0) return [];
+    
+    const date = new Date(selectedDate);
+    const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, etc.
+    
+    // Find available slots for this day of week
+    const daySlots = availabilitySlots.filter(slot => slot.day_of_week === dayOfWeek);
+    
+    // Convert to time options
+    const times = [];
+    daySlots.forEach(slot => {
+      const startTime = slot.start_time;
+      const endTime = slot.end_time;
+      
+      // Generate hourly slots between start and end time
+      let current = startTime;
+      while (current < endTime) {
+        times.push({
+          value: current.substring(0, 5), // HH:MM format
+          label: current.substring(0, 5)
+        });
+        
+        // Add 1 hour
+        const [hours, minutes] = current.split(':');
+        const nextHour = (parseInt(hours) + 1).toString().padStart(2, '0');
+        current = `${nextHour}:${minutes}`;
+        
+        if (current >= endTime) break;
+      }
+    });
+    
+    return times;
+  };
+
+  // Submit appointment booking
+  const handleSubmitAppointment = async (e) => {
+    e.preventDefault();
+    if (creatingAppointment) return;
+
+    console.log('🗓️ Creating appointment...');
+    const participantDetails = getParticipantDetails(activeConversation);
+    
+    if (!participantDetails || !participantDetails.userId) {
+      console.error('❌ Could not get professional details');
+      alert(isArabic ? 'خطأ في البيانات - لا يمكن تحديد مقدم الخدمة' : 'Error in data - cannot identify professional');
+      return;
+    }
+
+    setCreatingAppointment(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert(isArabic ? 'يجب تسجيل الدخول أولاً' : 'Please login first');
+        return;
+      }
+
+      const appointmentPayload = {
+        alistpro: participantDetails.professionalId || participantDetails.userId,
+        appointment_date: appointmentData.date,
+        start_time: appointmentData.time + ':00',
+        end_time: addHourToTime(appointmentData.time) + ':00',
+        notes: appointmentData.description || '',
+        location: appointmentData.address || 'عنوان سيتم تحديده'
+      };
+
+      console.log('📋 Appointment payload being sent:', appointmentPayload);
+      console.log('👤 Participant details:', participantDetails);
+
+      const response = await fetch('http://127.0.0.1:8000/api/scheduling/appointments/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(appointmentPayload)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Appointment booked successfully:', result);
+        console.log('✅ Appointment ID:', result.id);
+        console.log('✅ Appointment client:', result.client);
+        console.log('✅ Appointment alistpro:', result.alistpro);
+
+        // Send message to conversation
+        const appointmentMessage = isArabic 
+          ? `📅 تم حجز موعد!\n🕐 التاريخ والوقت: ${appointmentData.date} في ${appointmentData.time}\n📍 المكان: ${appointmentData.address || 'سيتم تحديده'}\n📝 الوصف: ${appointmentData.description}`
+          : `📅 Appointment booked!\n🕐 Date & Time: ${appointmentData.date} at ${appointmentData.time}\n📍 Location: ${appointmentData.address || 'To be determined'}\n📝 Description: ${appointmentData.description}`;
+
+        await messageService.sendMessage(token, activeConversation.id, {
+          content: appointmentMessage,
+          message_type: 'SYSTEM'
+        });
+
+        // Close modal and reset form
+        setShowAppointmentModal(false);
+        setAppointmentData({ date: '', time: '', description: '', address: '' });
+
+        alert(isArabic ? `تم حجز الموعد بنجاح مع ${participantDetails.name}!` : `Appointment booked successfully with ${participantDetails.name}!`);
+
+        // Refresh messages to show the appointment message
+        fetchMessages(activeConversation.id);
+
+      } else {
+        const errorData = await response.json();
+        console.log('❌ Error response status:', response.status);
+        console.log('❌ Error response data:', errorData);
+        console.log('❌ Non-field errors:', errorData.non_field_errors);
+        console.log('❌ All error details:', JSON.stringify(errorData, null, 2));
+        
+        // Extract the actual error message
+        let errorMessage = 'Failed to book appointment';
+        if (errorData.non_field_errors && errorData.non_field_errors.length > 0) {
+          errorMessage = errorData.non_field_errors[0];
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        } else if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+        
+        throw new Error(errorMessage);
+      }
+    } catch (error) {
+      console.error('❌ Error booking appointment:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+      alert(isArabic ? `فشل في حجز الموعد: ${errorMessage}` : `Failed to book appointment: ${errorMessage}`);
+    } finally {
+      setCreatingAppointment(false);
+    }
+  };
+
+  // Helper function to add one hour to time
+  const addHourToTime = (timeString) => {
+    const [hours, minutes] = timeString.split(':');
+    const nextHour = (parseInt(hours) + 1) % 24;
+    return `${nextHour.toString().padStart(2, '0')}:${minutes}`;
+  };
+
+  // Handle input changes for appointment form
+  const handleAppointmentInputChange = (e) => {
+    const { name, value } = e.target;
+    setAppointmentData(prev => ({
+      ...prev,
+      [name]: value
     }));
   };
 
@@ -1536,28 +1973,66 @@ const MessagesPage = () => {
                     })()}
                   </div>
                   <div className="flex items-center space-x-2">
-                    {/* Quote Button for Professionals */}
+                    {/* Quote Buttons for Professionals */}
                     {isProfessional && (
+                      <div className="flex space-x-2">
                       <button
                         onClick={handleCreateQuote}
                         className="flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                        title={isArabic ? 'إنشاء عرض سعر' : 'Create Quote'}
+                          title={isArabic ? 'إنشاء عرض سعر عادي' : 'Create Regular Quote'}
                       >
                         <FaFileInvoiceDollar className="h-4 w-4 mr-2" />
-                        {isArabic ? 'عرض سعر' : 'Quote'}
+                          {isArabic ? 'عرض عادي' : 'Regular Quote'}
                       </button>
+                        <button
+                          onClick={() => setShowInstallmentQuoteModal(true)}
+                          className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                          title={isArabic ? 'إنشاء عرض سعر مقسط' : 'Create Installment Quote'}
+                        >
+                          <FaHandshake className="h-4 w-4 mr-2" />
+                          {isArabic ? 'عرض مقسط' : 'Installment Quote'}
+                        </button>
+                      </div>
                     )}
 
-                    {/* Request Service Button for Clients */}
+                    {/* Client Actions Menu */}
                     {!isProfessional && (
+                      <div className="relative client-actions-menu">
                       <button
-                        onClick={handleCreateServiceRequest}
+                          onClick={() => setShowClientActionsMenu(!showClientActionsMenu)}
                         className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                        title={isArabic ? 'طلب خدمة' : 'Request Service'}
+                          title={isArabic ? 'إجراءات العميل' : 'Client Actions'}
                       >
                         <FaHandshake className="h-4 w-4 mr-2" />
+                          {isArabic ? 'إجراءات' : 'Actions'}
+                          <FaEllipsisV className="h-3 w-3 ml-2" />
+                        </button>
+                        
+                        {/* Dropdown Menu */}
+                        {showClientActionsMenu && (
+                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                            <div className="py-1">
+                              <button
+                                onClick={() => {
+                                  handleCreateServiceRequest();
+                                  setShowClientActionsMenu(false);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors"
+                              >
+                                <FaTools className="h-4 w-4 mr-3 text-blue-500" />
                         {isArabic ? 'طلب خدمة' : 'Request Service'}
                       </button>
+                              <button
+                                onClick={handleBookAppointment}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center transition-colors"
+                              >
+                                <FaCalendarAlt className="h-4 w-4 mr-3 text-green-500" />
+                                {isArabic ? 'حجز موعد' : 'Book Appointment'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                     
                     {(() => {
@@ -1654,6 +2129,25 @@ const MessagesPage = () => {
                                 : 'bg-white text-gray-900 rounded-bl-sm border border-gray-200'
                             }`}>
                               <p className="text-sm">{message.content}</p>
+                              
+                              {/* Show Payment Milestones if this message has escrow_id */}
+                              {message.escrow_id && (
+                                <div className={`mt-3 p-3 rounded-md ${
+                                  isCurrentUserMessage ? 'bg-blue-100' : 'bg-gray-50'
+                                }`}>
+                                  <div className="text-gray-900">
+                                    <PaymentMilestones 
+                                      escrowId={message.escrow_id}
+                                      onMilestoneUpdate={() => {
+                                        // Refresh messages to show updated status
+                                        if (activeConversation) {
+                                          fetchMessages(activeConversation.id);
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                             
                             {/* Message timestamp and status */}
@@ -1899,6 +2393,206 @@ const MessagesPage = () => {
           </motion.div>
         )}
         </AnimatePresence>
+
+        {/* Appointment Booking Modal */}
+        <AnimatePresence>
+          {showAppointmentModal && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              >
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {isArabic ? 'حجز موعد' : 'Book Appointment'}
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowAppointmentModal(false);
+                      setAppointmentData({ date: '', time: '', description: '', address: '', professionalId: null, selectedSlot: null });
+                      setAvailabilitySlots([]);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <FaTimes className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="p-6 space-y-6">
+                  {loadingAvailability ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                      <p className="text-gray-600">
+                        {isArabic ? 'جاري تحميل المواعيد المتاحة...' : 'Loading available appointments...'}
+                      </p>
+                    </div>
+                  ) : availabilitySlots.length === 0 ? (
+                    <div className="text-center py-8">
+                      <FaCalendarAlt className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                      <h4 className="text-lg font-medium text-gray-900 mb-2">
+                        {isArabic ? 'لا توجد مواعيد متاحة' : 'No Available Appointments'}
+                      </h4>
+                      <p className="text-gray-600">
+                        {isArabic 
+                          ? 'مقدم الخدمة لم يحدد أوقات عمل بعد. يرجى المحاولة مرة أخرى لاحقاً أو التواصل مباشرة.'
+                          : 'The professional has not set working hours yet. Please try again later or contact directly.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Available Dates */}
+                      <div>
+                        <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                          <FaCalendarAlt className="h-4 w-4 mr-2 text-blue-500" />
+                          {isArabic ? 'اختر التاريخ المناسب' : 'Select Available Date'}
+                        </h4>
+                        <div className="grid grid-cols-7 gap-2 max-h-32 overflow-y-auto">
+                          {getAvailableDates().map((dateOption, index) => (
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={() => setAppointmentData(prev => ({ ...prev, date: dateOption.date, time: '' }))}
+                              className={`p-2 rounded-lg text-center transition-colors border ${
+                                appointmentData.date === dateOption.date
+                                  ? 'bg-blue-500 text-white border-blue-500'
+                                  : 'bg-gray-50 hover:bg-gray-100 text-gray-900 border-gray-200'
+                              }`}
+                            >
+                              <div className="text-xs font-medium">{dateOption.dayName}</div>
+                              <div className="text-sm">{dateOption.day}</div>
+                              <div className="text-xs text-gray-500">{dateOption.month}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Available Times */}
+                      {appointmentData.date && (
+                        <div>
+                          <h4 className="text-md font-medium text-gray-900 mb-3 flex items-center">
+                            <FaClock className="h-4 w-4 mr-2 text-green-500" />
+                            {isArabic ? 'اختر الوقت المناسب' : 'Select Available Time'}
+                          </h4>
+                          <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto">
+                            {getAvailableTimesForDate(appointmentData.date).map((timeOption, index) => (
+                              <button
+                                key={index}
+                                type="button"
+                                onClick={() => setAppointmentData(prev => ({ ...prev, time: timeOption.value }))}
+                                className={`py-2 px-3 rounded-lg text-center transition-colors text-sm ${
+                                  appointmentData.time === timeOption.value
+                                    ? 'bg-green-500 text-white'
+                                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                                }`}
+                              >
+                                {timeOption.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Appointment Form */}
+                      {appointmentData.date && appointmentData.time && (
+                        <form onSubmit={handleSubmitAppointment} className="space-y-4 border-t pt-4">
+                          {/* Selected DateTime Display */}
+                          <div className="bg-blue-50 p-3 rounded-lg">
+                            <h5 className="font-medium text-blue-900 mb-1">
+                              {isArabic ? 'الموعد المحدد:' : 'Selected Appointment:'}
+                            </h5>
+                            <p className="text-blue-700">
+                              📅 {appointmentData.date} | 🕐 {appointmentData.time}
+                            </p>
+                          </div>
+
+                          {/* Description */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {isArabic ? 'وصف الموعد' : 'Appointment Description'} *
+                            </label>
+                            <textarea
+                              name="description"
+                              value={appointmentData.description}
+                              onChange={handleAppointmentInputChange}
+                              placeholder={isArabic ? 'اكتب تفاصيل الموعد...' : 'Write appointment details...'}
+                              rows={3}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              required
+                            />
+                          </div>
+
+                          {/* Address */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              {isArabic ? 'العنوان (اختياري)' : 'Address (Optional)'}
+                            </label>
+                            <input
+                              type="text"
+                              name="address"
+                              value={appointmentData.address}
+                              onChange={handleAppointmentInputChange}
+                              placeholder={isArabic ? 'أدخل عنوان الموعد...' : 'Enter appointment address...'}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+
+                          {/* Modal Footer */}
+                          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAppointmentModal(false);
+                                setAppointmentData({ date: '', time: '', description: '', address: '', professionalId: null, selectedSlot: null });
+                                setAvailabilitySlots([]);
+                              }}
+                              className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                            >
+                              {isArabic ? 'إلغاء' : 'Cancel'}
+                            </button>
+                            <button
+                              type="submit"
+                              disabled={creatingAppointment || !appointmentData.date || !appointmentData.time || !appointmentData.description}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                            >
+                              {creatingAppointment ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                                  {isArabic ? 'جاري الحجز...' : 'Booking...'}
+                                </>
+                              ) : (
+                                <>
+                                  <FaCalendarAlt className="h-4 w-4 mr-2" />
+                                  {isArabic ? 'حجز الموعد' : 'Book Appointment'}
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Installment Quote Modal */}
+        <InstallmentQuoteModal
+          isOpen={showInstallmentQuoteModal}
+          onClose={() => setShowInstallmentQuoteModal(false)}
+          onSubmit={handleCreateQuoteWithInstallments}
+          loading={creatingServiceRequest}
+        />
 
         {/* Error Toast */}
         <AnimatePresence>
